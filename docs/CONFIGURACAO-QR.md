@@ -8,6 +8,8 @@ A tela usa o mesmo desenho nos dois modos e a identidade existente do Pomodoro: 
 
 O QR não contém a senha do Wi-Fi de casa. Essa senha continua sendo informada no formulário de configuração. SSID, senha temporária e endereço local permanecem disponíveis para conexão manual nas respectivas etapas. Os ajustes de cor quente e LCD verde são suspensos durante essas telas para manter o QR preto e branco; os valores salvos não mudam.
 
+A cor verde agora acompanha a tela efetivamente desenhada, em vez do mostrador salvo. Ao entrar em Pomodoro, JPG/GIF, mensagens ou testes da tela, a cor normal ou quente noturna é restaurada antes do primeiro pixel. O verde volta ao retornar a um LCD, se estiver habilitado, e permanece estável na troca entre os dois LCDs. As duas etapas de QR mantêm gama neutro sem reaplicar a cor quente entre elas.
+
 ## Geração e limites
 
 - Geração local com Project Nayuki 1.8.0 (MIT), sem servidor ou pedido externo.
@@ -24,5 +26,7 @@ python sim/qr_decode_test.py
 ```
 
 Os códigos das 13 prévias foram decodificados na resolução nativa de 240×240, incluindo credenciais com caracteres reservados. Compilação 4M2M, testes de segurança/histórico/cor quente e 2.000 casos de fuzzing por formato de GIF/JPEG passaram.
+
+A regressão de cor usa as funções reais do firmware e as telas do simulador, verificando o estado do gama antes de desenhar cada pixel. Inclui LCDs, Pomodoro, JPG/GIF, mensagens, erros, cor/VCOM, prévia, dia/noite, opção verde ligada/desligada e as duas etapas de QR nos modos de configuração e recuperação. A candidata foi validada também pelo simulador Linux de 32 bits.
 
 Ainda falta validar a câmera de Android/iPhone na tela física, a confirmação da entrada na rede sem internet e a troca automática de etapa ao conectar/desconectar. A abertura automática do portal depende do sistema do celular. A versão candidata não foi instalada no relógio.

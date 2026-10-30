@@ -3178,6 +3178,7 @@ void setupQrScreen(bool recovery) {
   bool connected = WiFi.softAPgetStationNum() > 0;
   if (setupQrShown == (int8_t)connected) return;
   setupQrShown = connected;
+  lcdViewActive = false;  // QR exige gama neutro; não reaplica a cor quente entre as duas etapas
   // QR em preto/branco, mesmo se o tema salvo for um LCD verde ou estiver com cor quente à noite.
   // Os laços de configuração/recuperação não reaplicam o gama; o reinício retoma os ajustes salvos.
   if (tftReady && warmSent != 0) {

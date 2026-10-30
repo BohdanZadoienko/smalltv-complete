@@ -6,11 +6,38 @@ function fn(signature) {
   if (a < 0 || b < 0) throw Error('Função ausente: ' + signature);
   return source.slice(a, b + 2);
 }
+const qr = source.includes('void setupQrScreen(bool recovery) {');
+const qrFixture = qr ? `
+static const char *AP_NAME = "SmallTV-Pomodoro", *RECOVERY_AP = "SmallTV-Recuperacao";
+static int8_t setupQrShown = -1;
+static struct {
+  int stations = 0;
+  int softAPgetStationNum() { return stations; }
+  struct IP { String toString() { return "192.168.4.1"; } };
+  IP softAPIP() { return {}; }
+} WiFi;
+${fn('void setupQrScreen(bool recovery)')}
+` : '';
+const qrCases = qr ? `
+    for (bool recovery : {false, true}) {
+      f->expected = lcd; s.theme = THEME_LCD; uiRenderClock(s);
+      f->expected = 0; setupQrShown = -1; WiFi.stations = 0;
+      setupQrScreen(recovery);
+      fails += warmSent != 0 || lcdViewActive;
+      size_t n = sent.size();
+      setupQrScreen(recovery);  // sem mudança de etapa: QR estável, sem reenviar comandos
+      fails += sent.size() != n;
+      n = sent.size(); WiFi.stations = 1; setupQrScreen(recovery);
+      fails += warmSent != 0 || lcdViewActive || sent.size() != n;
+      f->expected = lcd; uiRenderClock(s);
+      fails += warmSent != lcd;
+    }
+` : '';
 fs.writeFileSync(process.argv[2], `
 namespace TintTest {
 struct Cmd { uint8_t c; std::vector<uint8_t> d; };
 static std::vector<Cmd> sent;
-static struct { bool lcdGreen = true; int theme = THEME_LCD; } cfg;
+static struct { bool lcdGreen = true; int theme = THEME_LCD; char apPass[9] = "AbCd2345"; } cfg;
 static bool lcdViewActive = false, tftReady = true, warmConj = false;
 static uint8_t warmNow = 0, previewTheme = THEME_LCD;
 static int16_t warmSent = -1;
@@ -44,6 +71,7 @@ static bool isGif(const String &s) { return s.find(".gif") != String::npos; }
 static bool validGif(const String &) { return true; }
 static bool drawJpg(const String &) { G->drawPixel(0, 0, TEXT); return true; }
 ${fn('bool showAlbumItem(const String &f)')}
+${qrFixture}
 
 // Verifica também a ordem: o estado do chip deve estar certo ANTES do primeiro pixel de cada tela.
 struct TintFrame : Frame {
@@ -111,6 +139,7 @@ static int run() {
     cfg.theme = THEME_LCD; s.theme = THEME_TOMATO;
     f->expected = normal; uiRenderClock(s);
     fails += warmSent != normal;
+${qrCases}
   }
   fails += f->bad != 0;
   uiLcdViewHook = oldHook;
