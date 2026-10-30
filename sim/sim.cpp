@@ -12,6 +12,7 @@
 #include "../smalltv-pomodoro/ui_kit.h"
 #include "../smalltv-pomodoro/assets.h"
 #include "../smalltv-pomodoro/facepack.h"
+#include "../smalltv-pomodoro/setup_qr.h"
 #include <chrono>
 #include <dirent.h>
 #include <vector>
@@ -532,6 +533,42 @@ static void checkWorldCost() {
   delete f;
 }
 
+static int checkSetupQr() {
+  int fails = 0;
+  char payload[SETUP_WIFI_TEXT];
+  uint8_t qr[SETUP_QR_BYTES];
+  const char *ssid = "Small;TV:1", *pass = "ab\\cd,\"12";
+  bool valid = setupWifiPayload(payload, sizeof payload, ssid, pass);
+  fails += !valid || strcmp(payload, "WIFI:T:WPA;S:Small\\;TV\\:1;P:ab\\\\cd\\,\\\"12;;") != 0;
+  fails += !setupQrEncode(payload, qr);
+  char tiny[12];
+  fails += setupWifiPayload(tiny, sizeof tiny, ssid, pass) || tiny[0];
+  fails += setupWifiPayload(payload, sizeof payload, "", pass);
+  fails += setupWifiPayload(payload, sizeof payload, "SmallTV", "short");
+  char longSsid[34]; memset(longSsid, 's', sizeof longSsid); longSsid[33] = 0;
+  fails += setupWifiPayload(payload, sizeof payload, longSsid, pass);
+  memset(payload, 'X', sizeof payload - 1); payload[sizeof payload - 1] = 0;
+  fails += setupQrEncode(payload, qr);
+  const uint8_t lang = uiLang;
+  Frame *f = new Frame();
+  for (int l = 0; l < 3; l++) {
+    uiSetLang(l);
+    for (int r = 0; r < 2; r++) for (int c = 0; c < 2; c++) {
+      uiBegin(f);
+      uiWifiSetup(r ? "SmallTV-Recuperacao" : "SmallTV-Pomodoro", "AbCd2345", "192.168.4.1", c, r);
+      char name[48]; snprintf(name, sizeof name, "setup_%s_%s_%d", r ? "recovery" : "wifi", c ? "portal" : "connect", l);
+      save(*f, name);
+    }
+  }
+  uiBegin(f);
+  uiWifiSetup(ssid, pass, "192.168.4.1", false, false);
+  save(*f, "setup_escaped");
+  delete f;
+  uiSetLang(lang);
+  printf("QR de configuracao e recuperacao: %s (escape, limites e 3 idiomas)\n", fails ? "FALHOU" : "ok");
+  return fails;
+}
+
 int main() {
   if (const char *l = getenv("SIM_LANG")) uiSetLang(atoi(l));  // 1 = inglês, 2 = espanhol (as prévias oficiais ficam em português)
   // ---- relógio: temas ----
@@ -637,6 +674,7 @@ int main() {
 
   // ---- redesenho incremental ----
   int fails = 0;
+  fails += checkSetupQr();
   for (int t = 0; t < THEME_COUNT; t++) {
     UiState st = base(14, 58, 50);
     st.theme = t;

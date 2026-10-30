@@ -3169,12 +3169,28 @@ void setupUpdate() {
 
 // ---------- modo de recuperação ----------
 #define RECOVERY_AP "SmallTV-Recuperacao"
+// Só redesenha ao mudar de etapa: o QR fica estável para a câmera, sem animação nem piscada.
+int8_t setupQrShown = -1;
+void setupQrScreen(bool recovery) {
+  bool connected = WiFi.softAPgetStationNum() > 0;
+  if (setupQrShown == (int8_t)connected) return;
+  setupQrShown = connected;
+  // QR em preto/branco, mesmo se o tema salvo for um LCD verde ou estiver com cor quente à noite.
+  // Os laços de configuração/recuperação não reaplicam o gama; o reinício retoma os ajustes salvos.
+  if (tftReady && warmSent != 0) {
+    warmApplyState([](uint8_t c, uint8_t *d, uint8_t n) { tft.sendCommand(c, d, n); }, 0);
+    warmSent = 0;
+  }
+  String ip = WiFi.softAPIP().toString();
+  uiWifiSetup(recovery ? RECOVERY_AP : AP_NAME, cfg.apPass, ip.c_str(), connected, recovery);
+}
+
 void startRecovery() {
   newFormToken();
   WiFi.mode(WIFI_AP);
   WiFi.softAP(RECOVERY_AP, cfg.apPass);
-  String pw = String(tr("senha: ", "password: ", "clave: ")) + cfg.apPass;
-  message(tr("Modo de recuperacao", "Recovery mode", "Modo de recuperacion"), RECOVERY_AP, pw.c_str(), "http://192.168.4.1");
+  setupQrShown = -1;
+  setupQrScreen(true);
   server.on("/", HTTP_GET, [] {
     String p = F("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>SmallTV</title>"
                  "<style>body{font:16px system-ui;background:#111;color:#eee;max-width:420px;margin:auto;padding:20px}"
@@ -3491,8 +3507,8 @@ void startPortal() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(AP_NAME, cfg.apPass);
   dns.start(53, "*", WiFi.softAPIP());
-  String pw = String(tr("senha: ", "password: ", "clave: ")) + cfg.apPass;
-  message(tr("Configure o Wi-Fi", "Set up Wi-Fi", "Configura el Wi-Fi"), AP_NAME, pw.c_str(), "http://192.168.4.1");
+  setupQrShown = -1;
+  setupQrScreen(false);
   server.on("/", HTTP_GET, [] {
     int n = WiFi.scanNetworks();
     String opts;
@@ -3631,11 +3647,13 @@ void loop() {
   if (bootCount && millis() > 30000) setBootCount(0);  // ficou ligado: não foi uma inicialização curta
   if (recoveryMode) {
     server.handleClient();
+    setupQrScreen(true);
     return;
   }
   if (portalMode) {
     dns.processNextRequest();
     server.handleClient();
+    setupQrScreen(false);
     // sem configuração em 5 min (ex.: roteador estava desligado): reinicia e tenta a rede salva de novo
     if (millis() > 300000) safeRestart();
     return;

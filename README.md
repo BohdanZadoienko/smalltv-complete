@@ -74,14 +74,18 @@ Open the IP shown on the clock in any browser on the same network. Settings save
 1. Download the latest `.bin` from [Releases](../../releases).
 2. In the original firmware's web page, open **Firmware Upgrade** and upload the file.
    - If you get `ERROR[4]: Not Enough Space`: the factory update space varies between units. First upload the loader [`smalltv-mod-loader.bin`](https://github.com/giovi321/smalltv-mod/releases/tag/v2.8.2) (giovi321/smalltv-mod v2.8.2), join the open network `SmallTV-Loader` and upload this firmware at `http://192.168.4.1/update`.
-3. If the clock does not join your network by itself, connect to the `SmallTV-Pomodoro` network and open `http://192.168.4.1` (**2.4 GHz** networks only).
+3. If the clock does not join your network by itself, scan the QR on its screen with your phone and confirm joining `SmallTV-Pomodoro`. The QR includes the clock's temporary Wi-Fi password. Once connected, the screen switches to a second QR that opens `http://192.168.4.1/` if the captive portal does not open automatically. Choose your home Wi-Fi and enter its password (**2.4 GHz** networks only). The network name, password and local address remain visible for manual setup.
 4. Open the IP shown on the screen to use the panel. Later updates: the panel offers them with one tap, or use *Settings → Update firmware*.
+
+![QR setup and recovery: join the temporary Wi-Fi, then open the local panel](docs/configuracao-qr.png)
 
 ### If something goes wrong
 
 If the clock freezes or keeps restarting (for example after an update), **unplug it and plug it back in 3 times in a row, leaving it on for less than 30 seconds each time**. On the third time it opens **recovery mode**: join the `SmallTV-Recuperacao` network and open `http://192.168.4.1` to upload a firmware (no password needed), reset the settings to defaults, forget the Wi-Fi or download your focus history. *Restart normally* goes back to the clock.
 
 If the clock does not turn on at all and recovery mode does not open, reflash it over USB-TTL without losing your photos and settings: see [docs/RECUPERACAO.md](docs/RECUPERACAO.md).
+
+Recovery mode also shows a Wi-Fi QR for `SmallTV-Recuperacao` and then a local-address QR once a phone joins. These QR codes are generated on the clock; no external service receives the temporary password. QR scanning and automatic portal opening depend on the phone; the manual connection path remains available.
 
 To go back to the original firmware, open recovery mode and upload GeekMagic's `.bin` ([GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) there. Since 1.20.1, *Settings → Update firmware* only accepts firmware signed by this project (with its `.sig` file from the release).
 
@@ -227,5 +231,6 @@ Third-party parts keep their own licenses (copies in [`licenses/`](licenses)):
 
 - The digit outlines derived from DSEG7, Bebas Neue, Outfit and Righteous (in `smalltv-pomodoro/fonts.cpp` and the faces that use them) remain under the SIL Open Font License 1.1.
 - uzlib (`smalltv-pomodoro/src/uzlib/`) is under the zlib license.
+- QR generation uses [Project Nayuki's QR Code generator 1.8.0](https://github.com/nayuki/QR-Code-generator/tree/v1.8.0/c), under the MIT license (`licenses/qrcodegen-MIT.txt`).
 - JPEGDEC (`smalltv-pomodoro/src/JPEGDEC/`) is under the Apache License 2.0.
 - AnimatedGIF (`smalltv-pomodoro/src/AnimatedGIF/`) is under the Apache License 2.0. Local changes are described in `docs/GIF-SECURITY.md`.
