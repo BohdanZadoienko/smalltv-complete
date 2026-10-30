@@ -13,6 +13,7 @@
 #include "../smalltv-pomodoro/assets.h"
 #include "../smalltv-pomodoro/facepack.h"
 #include "../smalltv-pomodoro/setup_qr.h"
+#include "../smalltv-pomodoro/warm.h"
 #include <chrono>
 #include <dirent.h>
 #include <vector>
@@ -568,6 +569,7 @@ static int checkSetupQr() {
   printf("QR de configuracao e recuperacao: %s (escape, limites e 3 idiomas)\n", fails ? "FALHOU" : "ok");
   return fails;
 }
+#include "out/tint_test.inc"
 
 int main() {
   if (const char *l = getenv("SIM_LANG")) uiSetLang(atoi(l));  // 1 = inglês, 2 = espanhol (as prévias oficiais ficam em português)
@@ -697,5 +699,6 @@ int main() {
   checkWorldCost();
   fails += testPackages(p);
   fails += testSpriteLimits();
+  fails += TintTest::run();
   return fails;
 }
