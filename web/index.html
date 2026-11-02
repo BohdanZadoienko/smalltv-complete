@@ -28,6 +28,7 @@ small{color:var(--mut)}
 .faces{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
 .face{text-align:left;padding:0}.face .scr{border-width:5px}.face span{display:block;padding:8px 4px 0;font-weight:600}
 .face.cur .scr{border-color:var(--ac)}.face.rot span::before{content:'↻ ';color:var(--mut)}.face.cur span::after{content:var(--inuse,' · em uso');color:var(--ac);font-weight:400;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}.chip{padding:6px 12px;border-radius:999px;background:var(--card2);border:1px solid var(--line);color:var(--mut);font-size:13px}.chip.on{background:var(--ac);border-color:transparent;color:#fff;font-weight:600}
 .noimg{aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:13px}
 #pvbar{display:none;margin-bottom:12px;padding:10px 14px;border-radius:12px;background:#1d2a44;color:#bcd3ff}
 /* formulário */
@@ -134,11 +135,13 @@ nav button.on svg{stroke:var(--ac)}
  <div class="card hero"><div class="scr"><img id="curimg" alt=""></div><div><small>Mostrador atual</small><b id="curname">—</b><p id="curdesc"></p><label id="lcdgrow" style="display:none">Tom verde nos mostradores LCD<input data-k="lcdg" type="checkbox"></label></div></div>
  </div>
  <div class="body">
- <h2>Nativos</h2>
+ <div class="chips" id="fchips"></div>
+ <h2 id="hnat">Nativos</h2>
  <div class="faces" id="faces"></div>
- <h2>Baixados</h2>
+ <h2 id="hdl">Baixados</h2>
  <div class="faces" id="dl"></div>
  <small id="dlnone">Nenhum mostrador baixado ainda. Abra a galeria online logo abaixo e toque em um para instalar.</small>
+ <small id="fnone" hidden></small>
  <h2>Mais mostradores</h2>
  <div class="card">
   <p style="margin-top:0"><button class="btn p" onclick="catalog()">Ver a galeria online</button></p>
@@ -375,10 +378,33 @@ function img(f){const i=new Image();i.alt=f.n;
 const safeId=s=>{let o='';for(let c of String(s||'').toLowerCase()){if(/[a-z0-9_-]/.test(c))o+=c;else if(c==' '&&o&&!o.endsWith('-'))o+='-';if(o.length>=23)break}return o}
 function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 // ---------- mostradores ----------
-function loadFaces(){return fetch('/api/faces').then(r=>r.json()).then(j=>{let t=0;FACES=j.map(f=>({n0:f.n,d0:f.d,n:f.n,d:f.d,a:f.a||'',pkg:f.pkg,t:f.pkg?null:t++}));buildFaces();$('curimg').dataset.k='';if(st)load(st)})}
-function buildFaces(){FACES.forEach(f=>{const b=f.pkg==null&&LG&&BUILTIN[f.t];f.n=b?b[LG-1][0]:f.n0;f.d=b?b[LG-1][1]:f.d0});const g=$('faces'),d=$('dl');g.innerHTML='';d.innerHTML='';FACES.forEach(f=>{const b=el('button','face');b.dataset.k=fkey(f);
+function loadFaces(){return fetch('/api/faces').then(r=>r.json()).then(j=>{let t=0;FACES=j.map(f=>({n0:f.n,d0:f.d,n:f.n,d:f.d,a:f.a||'',pkg:f.pkg,t:f.pkg?null:t++}));buildFaces();$('curimg').dataset.k='';if(st)load(st);
+ // estilos e animação dos pacotes instalados vêm do catálogo do site (uma vez por visita; sem internet vale o último guardado)
+ if(!metaTried&&FACES.some(f=>f.pkg)){metaTried=true;fetch(CATALOG+'index.json',{cache:'no-store'}).then(r=>r.json()).then(setMeta).catch(()=>{})}})}
+// ---------- filtro dos mostradores ----------
+// Cada cartão leva em data-f as palavras do filtro: o tipo (nat = nativo, dl = baixado, cat = galeria online), os estilos e "anim".
+// Estilos: os mesmos do site (tags do faces.js e do catálogo). Animado: pacote com sprite de vários quadros ou brilho pulsante
+// (campo anim do catálogo, que o site só preenche nesses casos); entre os nativos, só o Flip (virada das plaquinhas), os outros não têm movimento próprio.
+// Nativos: na ordem de faces_list.h, estilos como no faces.js. Pacote fora do catálogo (instalado de arquivo) não tem estilo nem "anim" conhecidos.
+const FSTY=[['digital','Digital'],['pixel','Pixel art'],['analogico','Analógico'],['retro','Retrô'],['esportivo','Esportivo']],BTAG=['pixel digital','pixel','analogico','digital','digital retro','digital retro','digital retro','digital','digital','digital','digital retro','digital','digital'],BANIM=[5];
+// META: id do pacote -> [estilos, animado], do catálogo; guardado no navegador para filtrar sem internet
+let FLT='all',META={},metaTried=false;try{FLT=localStorage.faceflt||'all'}catch(e){}try{META=JSON.parse(localStorage.facemeta||'{}')}catch(e){}
+const mtok=m=>m?m[0]+(m[1]?' anim':''):'',ftok=f=>f.pkg?'dl '+mtok(META[f.pkg]):'nat '+(BTAG[f.t]||'')+(BANIM.includes(f.t)?' anim':'');
+const fhas=k=>k=='all'||!!document.querySelector('[data-f~="'+k+'"]')||Object.values(META).some(m=>mtok(m).split(' ').includes(k));
+// filtro em uso: se não existe mais nos dados (ex.: pacote removido), vale Todos
+const fcur=()=>fhas(FLT)?FLT:'all';
+function setMeta(c){META={};(c.faces||[]).forEach(e=>META[e.id]=[(e.tags||[]).join(' '),e.anim?1:0]);try{localStorage.facemeta=JSON.stringify(META)}catch(x){}
+ [...$('dl').children].forEach(b=>b.dataset.f='dl '+mtok(META[b.dataset.k.slice(2)]));fchips()}
+function fchips(){const k=fcur(),c=$('fchips');c.innerHTML='';
+ [['all','Todos'],['nat','Nativos'],['dl','Baixados'],['anim','Animados']].concat(FSTY).forEach(([v,n])=>{if(!fhas(v))return;const b=el('button','chip'+(v==k?' on':''),t(n));b.setAttribute('aria-pressed',v==k);
+  b.onclick=()=>{FLT=v;try{localStorage.faceflt=v}catch(e){}fchips()};c.appendChild(b)});
+ const cards=[...document.querySelectorAll('#faces>*,#dl>*,#cat>*')];cards.forEach(b=>b.hidden=k!='all'&&!b.dataset.f.split(' ').includes(k));
+ const any=g=>!![...$(g).children].some(b=>!b.hidden),pk=$('dl').children.length>0,all=k=='all'||k=='dl';
+ $('hnat').hidden=!any('faces');$('hdl').hidden=!(any('dl')||!pk&&all);$('dlnone').hidden=pk||!all;
+ const none=!cards.some(b=>!b.hidden);$('fnone').hidden=!none;if(none)$('fnone').textContent=t($('cat').children.length?'Nenhum mostrador neste filtro.':'Nenhum mostrador neste filtro ainda. Abra a galeria online logo abaixo para ver mais.')}
+function buildFaces(){FACES.forEach(f=>{const b=f.pkg==null&&LG&&BUILTIN[f.t];f.n=b?b[LG-1][0]:f.n0;f.d=b?b[LG-1][1]:f.d0});const g=$('faces'),d=$('dl');g.innerHTML='';d.innerHTML='';FACES.forEach(f=>{const b=el('button','face');b.dataset.k=fkey(f);b.dataset.f=ftok(f);
  const s=el('div','scr');s.appendChild(img(f));b.appendChild(s);b.appendChild(el('span',null,f.n));b.onclick=()=>faceSheet(f);(f.pkg?d:g).appendChild(b)});
- $('dlnone').hidden=!!d.children.length}
+ fchips()}
 const rotKeys=()=>st&&st.cfg.rot?st.cfg.rot.split(',').filter(Boolean):[];
 function rotToggle(f){const k=fkey(f),l=rotKeys(),on=l.includes(k);save({rot:(on?l.filter(x=>x!=k):l.concat(k)).join(',')}).then(()=>{closeSheet();toast(t(on?'Fora do rodízio':'Incluído no rodízio'))})}
 function faceSheet(f){const c=$('sheetc');c.innerHTML='';const s=el('div','scr');s.appendChild(img(f));c.appendChild(s);
@@ -404,8 +430,8 @@ $('pkf').onchange=e=>{const fl=[...e.target.files];e.target.value='';const p=fl.
 const vnum=v=>String(v||'0').split('.').reduce((a,x)=>a*1000+(+x||0),0),old=e=>e.fw&&st&&vnum(st.ver)<vnum(e.fw);
 function catalog(){toast(t('Carregando a galeria...'));fetch(CATALOG+'index.json',{cache:'no-store'}).then(r=>r.json()).then(c=>{const g=$('cat');g.innerHTML='';
  (c.faces||[]).forEach(e=>{const inst=FACES.some(f=>f.pkg==e.id),b=el('button','face'),s=el('div','scr');s.appendChild(img({n:tName(e),src:CATALOG+e.preview}));
-  b.append(s,el('span',null,tName(e)+(inst?' · '+t('instalado'):old(e)?' · '+t('requer')+' v'+e.fw:'')));b.onclick=()=>catSheet(e,inst);g.appendChild(b)});
- if(!g.children.length)g.textContent=t('A galeria ainda está vazia.')}).catch(()=>toast(t('Sem internet no navegador')))}
+  b.append(s,el('span',null,tName(e)+(inst?' · '+t('instalado'):old(e)?' · '+t('requer')+' v'+e.fw:'')));b.dataset.f='cat '+mtok([(e.tags||[]).join(' '),e.anim]);b.onclick=()=>catSheet(e,inst);g.appendChild(b)});
+ if(!g.children.length)g.textContent=t('A galeria ainda está vazia.');setMeta(c)}).catch(()=>toast(t('Sem internet no navegador')))}
 function catSheet(e,inst){const c=$('sheetc');c.innerHTML='';const s=el('div','scr');s.appendChild(img({n:tName(e),src:CATALOG+e.preview}));c.appendChild(s);
  c.append(el('h3',null,tName(e)),el('p',null,tDesc(e)+(e.author?' · '+t('por')+' '+e.author:'')+' · '+kb(e.size||0)));
  if(old(e)){c.append(el('p',null,t('Este mostrador precisa do firmware {0} ou mais novo (o relógio está na {1}).',e.fw,st.ver)));const u=el('button','btn p',t('Atualizar firmware'));u.onclick=()=>location='/update';c.appendChild(u);$('sheet').classList.add('v');return}
