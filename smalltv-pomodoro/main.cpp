@@ -581,19 +581,22 @@ WiFiUDP hueUdp;
 WiFiUDP mdnsUdp;
 IPAddress mdnsIp;
 
-void mdnsSend(const char *name, uint16_t id, bool legacy, bool direct, uint8_t want = MDNS_A) {
+enum MdnsTo : uint8_t { MDNS_GROUP, MDNS_DIRECT, MDNS_BROADCAST };  // multicast, quem perguntou, broadcast da sub-rede
+
+void mdnsSend(const char *name, uint16_t id, bool legacy, MdnsTo to, uint8_t want = MDNS_A) {
   uint8_t out[96], ip[4] = {mdnsIp[0], mdnsIp[1], mdnsIp[2], mdnsIp[3]};
   size_t m = mdnsAnswer(out, sizeof out, name, ip, id, legacy, want);
   if (!m) return;
-  if (direct) mdnsUdp.beginPacket(mdnsUdp.remoteIP(), mdnsUdp.remotePort());
+  if (to == MDNS_DIRECT) mdnsUdp.beginPacket(mdnsUdp.remoteIP(), mdnsUdp.remotePort());
+  else if (to == MDNS_BROADCAST) mdnsUdp.beginPacket(IPAddress((uint32_t)mdnsIp | ~(uint32_t)WiFi.subnetMask()), 5353);
   else mdnsUdp.beginPacketMulticast(IPAddress(224, 0, 0, 251), 5353, mdnsIp);
   mdnsUdp.write(out, m);
   mdnsUdp.endPacket();
 }
 
 void mdnsAnnounce() {
-  if (lanName[0]) mdnsSend(lanName, 0, false, false);
-  mdnsSend(netName, 0, false, false);
+  if (lanName[0]) mdnsSend(lanName, 0, false, MDNS_GROUP);
+  mdnsSend(netName, 0, false, MDNS_GROUP);
 }
 
 bool mdnsJoin() {
@@ -661,14 +664,19 @@ void mdnsLoop() {
   const char *name = want ? lanName : (want = mdnsAsksFor(b, n, netName, nullptr)) ? netName : nullptr;
   if (!name) return;
   if (legacy) {  // resolvedor comum: só ele espera a resposta
-    mdnsSend(name, id, true, true, want);
+    mdnsSend(name, id, true, MDNS_DIRECT, want);
     return;
   }
   // Por multicast mesmo quando pediram resposta direta (bit QU; a RFC 6762, 5.4, permite): no Windows vários programas
   // escutam a porta 5353 (Chrome, Edge...) e a resposta direta pode cair num deles em vez do resolvedor, que então
   // espera ~2,8 s. E uma cópia direta para quem perguntou: há roteadores que não repassam multicast no Wi-Fi.
-  mdnsSend(name, id, false, false, want);
-  mdnsSend(name, id, false, true, want);
+  mdnsSend(name, id, false, MDNS_GROUP, want);
+  mdnsSend(name, id, false, MDNS_DIRECT, want);
+  // E por broadcast da sub-rede: roteador com 2,4 e 5 GHz na mesma rede pode não levar o multicast do relógio (2,4 GHz)
+  // até o PC no 5 GHz, e a cópia direta cai num dos programas da porta 5353. O resolvedor do Windows aceita a resposta
+  // por broadcast (medido). No máximo 4 por segundo: uma busca do Windows faz 12 perguntas em ~0,9 s.
+  static RateLimit bcastLimit;
+  if (bcastLimit.take(millis(), 4)) mdnsSend(name, id, false, MDNS_BROADCAST, want);
 }
 bool alexaUp = false;     // ouvindo a descoberta
 uint8_t alexaBri = 255;   // último brilho pedido (1-255)
