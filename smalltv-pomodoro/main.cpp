@@ -575,15 +575,15 @@ void command(const String &c) {
 // Nome na rede, sem decorar o IP:
 //  - lanName: http://smalltv.local; com outro relógio já usando, smalltv-2.local, -3... (conferido ao conectar)
 //  - netName: "smalltv-" + 4 hex do chip, sempre válido como reserva e usado no DHCP.
-// Só o registro A, com o leitor de pacotes de security.h (testado): o ESP8266mDNS custaria ~21 KB.
+// Só os registros A e AAAA, com o leitor de pacotes de security.h (testado): o ESP8266mDNS custaria ~21 KB.
 char netName[16], lanName[12];
 WiFiUDP hueUdp;
 WiFiUDP mdnsUdp;
 IPAddress mdnsIp;
 
-void mdnsSend(const char *name, uint16_t id, bool legacy, bool direct) {
-  uint8_t out[80], ip[4] = {mdnsIp[0], mdnsIp[1], mdnsIp[2], mdnsIp[3]};
-  size_t m = mdnsAnswer(out, sizeof out, name, ip, id, legacy);
+void mdnsSend(const char *name, uint16_t id, bool legacy, bool direct, uint8_t want = MDNS_A) {
+  uint8_t out[96], ip[4] = {mdnsIp[0], mdnsIp[1], mdnsIp[2], mdnsIp[3]};
+  size_t m = mdnsAnswer(out, sizeof out, name, ip, id, legacy, want);
   if (!m) return;
   if (direct) mdnsUdp.beginPacket(mdnsUdp.remoteIP(), mdnsUdp.remotePort());
   else mdnsUdp.beginPacketMulticast(IPAddress(224, 0, 0, 251), 5353, mdnsIp);
@@ -655,14 +655,20 @@ void mdnsLoop() {
   uint8_t b[256];  // a pergunta vem no começo; o resto (respostas conhecidas) pode ficar de fora
   int n = mdnsUdp.read(b, sizeof b);
   if (n <= 0) return;
-  bool legacy = mdnsUdp.remotePort() != 5353, qu = false;
+  bool legacy = mdnsUdp.remotePort() != 5353;
   uint16_t id = (uint16_t)(b[0] << 8 | b[1]);
-  const char *name = lanName[0] && mdnsAsksFor(b, n, lanName, &qu) ? lanName : mdnsAsksFor(b, n, netName, &qu) ? netName : nullptr;
+  uint8_t want = lanName[0] ? mdnsAsksFor(b, n, lanName, nullptr) : 0;
+  const char *name = want ? lanName : (want = mdnsAsksFor(b, n, netName, nullptr)) ? netName : nullptr;
   if (!name) return;
-  mdnsSend(name, id, legacy, legacy || qu);
-  // Pergunta comum (resposta por multicast): manda também uma cópia direta para quem perguntou. Há roteadores que
-  // não repassam multicast entre aparelhos do Wi-Fi; Windows, macOS e Android aceitam a resposta direta.
-  if (!legacy && !qu) mdnsSend(name, id, false, true);
+  if (legacy) {  // resolvedor comum: só ele espera a resposta
+    mdnsSend(name, id, true, true, want);
+    return;
+  }
+  // Por multicast mesmo quando pediram resposta direta (bit QU; a RFC 6762, 5.4, permite): no Windows vários programas
+  // escutam a porta 5353 (Chrome, Edge...) e a resposta direta pode cair num deles em vez do resolvedor, que então
+  // espera ~2,8 s. E uma cópia direta para quem perguntou: há roteadores que não repassam multicast no Wi-Fi.
+  mdnsSend(name, id, false, false, want);
+  mdnsSend(name, id, false, true, want);
 }
 bool alexaUp = false;     // ouvindo a descoberta
 uint8_t alexaBri = 255;   // último brilho pedido (1-255)

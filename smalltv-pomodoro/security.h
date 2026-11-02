@@ -123,8 +123,8 @@ static bool safeOwnHost(const char *s, size_t n, const char *name) {
   return port > 0 && port <= 65535;
 }
 
-// ---------- mDNS mínimo (RFC 6762): só responde "qual o IPv4 de <nome>.local?" ----------
-// O ESP8266mDNS do núcleo custa ~21 KB; para abrir o painel pelo nome basta o registro A.
+// ---------- mDNS mínimo (RFC 6762): só responde "qual o endereço de <nome>.local?" ----------
+// O ESP8266mDNS do núcleo custa ~21 KB; para abrir o painel pelo nome bastam os registros A e AAAA.
 // Lê um nome DNS em p[i..n) (ponteiros de compressão: no máximo 8 saltos), em minúsculas e com pontos.
 // Rótulo com '.' ou byte nulo é recusado ("smalltv-1a2b.local" num rótulo só não vira o nosso nome).
 static bool dnsReadName(const uint8_t *p, size_t n, size_t &i, char *out, size_t cap) {
@@ -162,26 +162,29 @@ static bool dnsReadName(const uint8_t *p, size_t n, size_t &i, char *out, size_t
   return true;
 }
 
-// É uma pergunta (não resposta) pelo registro A ou ANY, classe IN, de "<name>.local"? *qu = pediu
-// resposta direta (bit QU). Nome comparado sem diferenciar maiúsculas.
-static bool mdnsAsksFor(const uint8_t *p, size_t n, const char *name, bool *qu) {
-  if (n < 12 || (p[2] & 0xF8)) return false;  // QR=1 (resposta) ou opcode diferente de consulta
+// É uma pergunta (não resposta), classe IN, por "<name>.local"? Devolve o que pediu: MDNS_A, MDNS_AAAA (ANY pede
+// os dois) ou 0. *qu = alguma dessas perguntas pediu resposta direta (bit QU). Nome sem diferenciar maiúsculas.
+static const uint8_t MDNS_A = 1, MDNS_AAAA = 2;
+static uint8_t mdnsAsksFor(const uint8_t *p, size_t n, const char *name, bool *qu) {
+  if (qu) *qu = false;
+  if (n < 12 || (p[2] & 0xF8)) return 0;  // QR=1 (resposta) ou opcode diferente de consulta
   unsigned qd = (unsigned)p[4] << 8 | p[5];
-  if (qd > 16) return false;
+  if (qd > 16) return 0;
   char want[40], got[64];
-  if (snprintf(want, sizeof want, "%s.local", name) >= (int)sizeof want) return false;
+  if (snprintf(want, sizeof want, "%s.local", name) >= (int)sizeof want) return 0;
   for (char *c = want; *c; c++) *c = (char)tolower((unsigned char)*c);
   size_t i = 12;
+  uint8_t asked = 0;
   for (unsigned q = 0; q < qd; q++) {
-    if (!dnsReadName(p, n, i, got, sizeof got) || i + 4 > n) return false;
+    if (!dnsReadName(p, n, i, got, sizeof got) || i + 4 > n) return asked;  // o resto cortado: vale o que já leu
     unsigned type = (unsigned)p[i] << 8 | p[i + 1], cls = (unsigned)p[i + 2] << 8 | p[i + 3];
     i += 4;
-    if ((type == 1 || type == 255) && (cls & 0x7FFF) == 1 && !strcmp(got, want)) {
-      if (qu) *qu = cls & 0x8000;
-      return true;
-    }
+    uint8_t t = type == 1 ? MDNS_A : type == 28 ? MDNS_AAAA : type == 255 ? MDNS_A | MDNS_AAAA : 0;
+    if (!t || (cls & 0x7FFF) != 1 || strcmp(got, want)) continue;
+    if (qu && (cls & 0x8000)) *qu = true;
+    asked |= t;
   }
-  return false;
+  return asked;
 }
 
 // Outro aparelho já responde por "<name>.local"? (resposta mDNS com um registro desse nome)
@@ -228,11 +231,17 @@ static size_t mdnsProbeQuery(uint8_t *o, size_t cap, const char *name) {
   return i;
 }
 
-// Monta a resposta com o registro A. legacy: quem perguntou não usa a porta 5353 (resolvedor comum):
-// devolve o mesmo id, repete a pergunta e usa TTL curto, como pede a RFC 6762 (6.7). 0 se não couber.
-static size_t mdnsAnswer(uint8_t *o, size_t cap, const char *name, const uint8_t ip[4], uint16_t id, bool legacy) {
-  size_t k = strlen(name), need = 12 + (legacy ? k + 8 + 4 + 2 : k + 8) + 10 + 4;
-  if (!k || k > 63 || cap < need) return 0;
+// Monta a resposta com os registros pedidos em want (MDNS_A, MDNS_AAAA). legacy: quem perguntou não usa a porta 5353
+// (resolvedor comum): devolve o mesmo id, repete a pergunta e usa TTL curto, como pede a RFC 6762 (6.7). 0 se não couber.
+// O AAAA é o próprio IPv4 escrito como IPv6 (::ffff:a.b.c.d): o relógio não tem IPv6 (o lwIP com IPv6 custaria ~31 KB),
+// mas sem nenhum AAAA o Windows espera ~2,8 s a cada busca até desistir dele e usar o A (medido; NSEC não adianta). Com
+// esse endereço ele responde na hora, já convertido de volta para o IPv4. Só vai para quem pergunta pelo AAAA, e com o
+// A junto como adicional (RFC 6762, 6.2).
+static size_t mdnsAnswer(uint8_t *o, size_t cap, const char *name, const uint8_t ip[4], uint16_t id, bool legacy,
+                         uint8_t want = MDNS_A) {
+  bool a = want & MDNS_A, six = want & MDNS_AAAA;
+  size_t k = strlen(name), need = 12 + k + 8 + (legacy ? 4 + 2 : 0) + 10 + 4 + (six ? 2 + 10 + 16 : 0);
+  if (!k || k > 63 || !(a || six) || cap < need) return 0;
   size_t i = 0;
   auto u16 = [&](unsigned v) { o[i++] = (uint8_t)(v >> 8); o[i++] = (uint8_t)v; };
   auto qname = [&] {
@@ -244,27 +253,35 @@ static size_t mdnsAnswer(uint8_t *o, size_t cap, const char *name, const uint8_t
     i += 5;
     o[i++] = 0;
   };
+  auto record = [&](bool v6, bool first) {
+    if (first && !legacy) qname();
+    else u16(0xC00C);  // aponta para o nome já escrito (pergunta ou primeiro registro)
+    u16(v6 ? 28 : 1);               // AAAA ou A
+    u16(legacy ? 0x0001 : 0x8001);  // IN (+ cache-flush no mDNS)
+    u16(0);
+    u16(legacy ? 10 : 120);  // TTL
+    u16(v6 ? 16 : 4);
+    if (v6) {
+      memset(o + i, 0, 10);
+      o[i + 10] = o[i + 11] = 0xFF;
+      i += 12;
+    }
+    memcpy(o + i, ip, 4);
+    i += 4;
+  };
   u16(legacy ? id : 0);
   u16(0x8400);  // resposta com autoridade
   u16(legacy ? 1 : 0);
-  u16(1);
+  u16(a && six ? 2 : 1);  // respostas
   u16(0);
-  u16(0);
+  u16(a ? 0 : 1);  // adicional: o A, quando só perguntaram pelo AAAA
   if (legacy) {
     qname();
+    u16(a ? 1 : 28);
     u16(1);
-    u16(1);
-    u16(0xC00C);  // aponta para o nome da pergunta
-  } else {
-    qname();
   }
-  u16(1);                         // A
-  u16(legacy ? 0x0001 : 0x8001);  // IN (+ cache-flush no mDNS)
-  u16(0);
-  u16(legacy ? 10 : 120);  // TTL
-  u16(4);
-  memcpy(o + i, ip, 4);
-  i += 4;
+  record(!a, true);            // A (ou só o AAAA)
+  if (six) record(a, false);   // AAAA (pediram os dois) ou o A adicional
   return i;
 }
 
