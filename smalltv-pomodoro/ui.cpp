@@ -890,9 +890,15 @@ void uiWifiSetup(const char *ssid, const char *pass, const char *ip, bool connec
   text(141, 105, 1, MUTED, tr("ETAPA", "STEP", "PASO"));
   text(177, 105, 1, status, connected ? "2/2" : "1/2");
   if (connected) {
-    text(141, 125, 1, TEXT, tr("Se o portal", "If the portal", "Si el portal"));
-    text(141, 137, 1, TEXT, tr("nao abrir,", "stays closed,", "no se abre,"));
-    text(141, 149, 1, TEXT, tr("escaneie o QR", "scan this QR", "escanea el QR"));
+    if (recovery) {  // a recuperação não tem portal cativo (sem DNS): o QR é o caminho
+      text(141, 125, 1, TEXT, tr("Escaneie o QR", "Scan this QR", "Escanea el QR"));
+      text(141, 137, 1, TEXT, tr("para abrir", "to open", "para abrir"));
+      text(141, 149, 1, TEXT, tr("o painel", "the panel", "el panel"));
+    } else {
+      text(141, 125, 1, TEXT, tr("Se o portal", "If the portal", "Si el portal"));
+      text(141, 137, 1, TEXT, tr("nao abrir,", "stays closed,", "no se abre,"));
+      text(141, 149, 1, TEXT, tr("escaneie o QR", "scan this QR", "escanea el QR"));
+    }
     text(141, 176, 2, TEXT, tr("Abrir", "Open", "Abrir"));
     text(141, 195, 2, TEXT, tr("painel", "panel", "panel"));
     textC(120, 230, 1, MUTED, recovery ? tr("Envie o firmware pelo painel", "Upload firmware in the panel", "Envia firmware desde el panel")
