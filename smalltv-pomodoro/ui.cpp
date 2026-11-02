@@ -730,7 +730,7 @@ static bool lcdFade(const UiState &s, uint8_t from, uint8_t t) {
 }
 
 void uiRenderClock(const UiState &s) {
-  notifyLcdView(s.theme == THEME_LCD || s.theme == THEME_FORECAST_LCD);
+  notifyLcdView(isLcd(s.theme));
   if (s.theme == THEME_PACK) {  // mostrador instalado como pacote (facepack.cpp)
     slideOn = false;
     bool full = enter(SCR_PACK);

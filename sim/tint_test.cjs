@@ -104,6 +104,12 @@ static int run() {
     uiInvalidateSlide();
     uiRenderClock(s);
     fails += warmSent != lcd || sent.size() != n;  // não apaga o verde no meio da transição LCD -> LCD
+    for (int w : {THEME_WORLD, THEME_WORLD_WATCH, THEME_LCD}) {  // Mundo e Mundo relógio também são LCD
+      s.theme = w;
+      uiInvalidateSlide();
+      uiRenderClock(s);
+      fails += warmSent != lcd || sent.size() != n;
+    }
 
     for (int phase = PH_WORK; phase <= PH_LONG; phase++) {
       f->expected = normal;
