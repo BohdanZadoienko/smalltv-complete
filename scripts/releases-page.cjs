@@ -7,6 +7,7 @@
 //  - notas/historico.json       notas curtas das versões antigas e o "aviso" das que não devem ser usadas
 //  - releases do GitHub         data e arquivos para baixar (gh api; ou --releases com o JSON da API já baixado)
 // Uma versão sem release (retirada do ar) entra só com as notas e o aviso.
+// Versões de teste (pré-lançamento) seguidas da mesma série x.y viram uma entrada só, com as novidades somadas.
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const REPO = 'davicorrea0/smalltv-pomodoro', ROOT = path.join(__dirname, '..');
 
@@ -51,6 +52,7 @@ const L = {
     lead: 'Todas as versões do firmware, da mais nova para a mais antiga, com o que mudou em cada uma e os arquivos. Para atualizar, o mais fácil é o botão <strong>Atualizar agora</strong> no painel do relógio; os arquivos daqui são para instalar pelo <code>/update</code> ou conferir.',
     avoid: v => `<strong>Não use a ${v.map(x => `<a href="#v${x}">v${x}</a>`).join(' nem a ')}.</strong> A 1.15.1 aumentava a imagem fantasma da tela e a 1.20.0 podia deixar o relógio sem ligar. Se o seu já não liga, siga o <a href="https://github.com/${REPO}/blob/main/docs/RECUPERACAO.md">guia de recuperação</a>.`,
     latest: 'mais recente', pre: 'teste', bad: 'não use', gone: 'retirada',
+    serie: (s, a, b) => `${s} (teste) — ${a} a ${b}`, each: 'Ver cada versão',
     files: 'Arquivos', gh: 'Ver no GitHub', sig: 'assinatura', sums: 'SHA256SUMS',
     help: 'Pelo <code>/update</code>, envie o <code>.bin.gz</code> sem descompactar; a partir da 1.20.1 envie junto o <code>.bin.gz.sig</code> (a assinatura). O <code>.bin</code> sem compressão serve para gravar pelo cabo USB-TTL. <code>SHA256SUMS.txt</code> confere os arquivos.',
     count: n => `${n} versões`, nav: ['Início', 'Galeria', 'Versões', 'Jogo'], navHref: ['./', 'galeria.html', 'versoes.html', 'jogo.html'],
@@ -63,6 +65,7 @@ const L = {
     lead: 'Every firmware release, newest first, with what changed in each one and its files. The easiest way to update is the <strong>Update now</strong> button in the clock\'s panel; the files here are for installing through <code>/update</code> or for checking.',
     avoid: v => `<strong>Do not use ${v.map(x => `<a href="#v${x}">v${x}</a>`).join(' or ')}.</strong> 1.15.1 made screen ghosting worse and 1.20.0 could leave the clock unable to start. If yours no longer starts, follow the <a href="https://github.com/${REPO}/blob/main/docs/RECUPERACAO.md">recovery guide</a> (in Portuguese).`,
     latest: 'latest', pre: 'test', bad: 'do not use', gone: 'withdrawn',
+    serie: (s, a, b) => `${s} (test) — ${a} to ${b}`, each: 'See each version',
     files: 'Files', gh: 'View on GitHub', sig: 'signature', sums: 'SHA256SUMS',
     help: 'Through <code>/update</code>, send the <code>.bin.gz</code> without unpacking it; from 1.20.1 on, send the <code>.bin.gz.sig</code> (the signature) with it. The uncompressed <code>.bin</code> is for flashing over a USB-TTL cable. <code>SHA256SUMS.txt</code> checks the files.',
     count: n => `${n} releases`, nav: ['Home', 'Gallery', 'Releases', 'Game'], navHref: ['./', 'gallery.html', 'releases.html', 'game.html'],
@@ -85,24 +88,68 @@ function fileLinks(x, t) {
   return out;
 }
 
+// o site tem português e inglês: cada página mostra as notas no seu idioma
+const langOf = t => t === L.en ? 'en' : 'pt';
+function dateOf(x, t) {
+  const when = x.rel ? x.rel.published_at : x.data;
+  const date = when ? new Date(when.length === 10 ? when + 'T12:00:00Z' : when).toLocaleDateString(t.date.locale, { ...t.date.opt, timeZone: 'America/Sao_Paulo' }) : '';
+  return { when, date };
+}
+const ghLink = (x, t) => x.rel ? `<a class="btn small" href="${esc(x.rel.html_url)}"><span class="gh" aria-hidden="true"></span>${t.gh}</a>` : '';
+
 function item(x, t) {
   const tags = [];
   if (x === latest) tags.push(`<span class="tag pkg">${t.latest}</span>`);
   if (x.rel && x.rel.prerelease && !x.aviso) tags.push(`<span class="tag">${t.pre}</span>`);
   if (x.aviso) tags.push(`<span class="tag bad">${x.rel ? t.bad : t.gone}</span>`);
-  const when = x.rel ? x.rel.published_at : x.data;
-  const date = when ? new Date(when.length === 10 ? when + 'T12:00:00Z' : when).toLocaleDateString(t.date.locale, { ...t.date.opt, timeZone: 'America/Sao_Paulo' }) : '';
-  // o site tem português e inglês: cada página mostra as notas no seu idioma
-  const lang = t === L.en ? 'en' : 'pt';
+  const { when, date } = dateOf(x, t);
+  const lang = langOf(t);
   const notes = `<ul class="list">${x.notas[lang].map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
   const aviso = x.aviso ? `<div class="note warn">${esc(x.aviso[lang])}</div>\n    ` : '';
   const files = x.aviso ? [] : fileLinks(x, t);
-  const gh = x.rel ? `<a class="btn small" href="${esc(x.rel.html_url)}"><span class="gh" aria-hidden="true"></span>${t.gh}</a>` : '';
+  const gh = ghLink(x, t);
   return `  <article class="rel${x.aviso ? ' avoid' : ''}" id="v${x.v}">
     <div class="rel-head"><h2>${x.v}</h2>${tags.join('')}${date ? `<time datetime="${esc(when.slice(0, 10))}">${date}</time>` : ''}</div>
     ${aviso}${notes}
     ${files.length || gh ? `<div class="btns">${files.join('')}${gh}</div>` : ''}
   </article>`;
+}
+
+// Série de teste: data e arquivos da mais nova; o aviso de "pode quebrar o aparelho" (nota com ⚠️) só o da mais nova;
+// novidades somadas sem repetir (só o texto idêntico); as notas e a release de cada versão ficam num <details>, da mais nova para a mais antiga.
+const isWarn = n => n.startsWith('⚠');
+const serieDe = v => v.split('.').slice(0, 2).join('.');
+function serie(run, t) {
+  const lang = langOf(t), top = run[0], last = run[run.length - 1], s = serieDe(top.v);
+  const { when, date } = dateOf(top, t);
+  const aviso = top.notas[lang].find(isWarn);
+  // da mais antiga para a mais nova: as notas de memória apagada da primeira ficam logo abaixo do aviso
+  const sum = [...new Set([...run].reverse().flatMap(x => x.notas[lang].filter(n => !isWarn(n))))];
+  const files = fileLinks(top, t), gh = ghLink(top, t);
+  const each = run.map(x => {
+    const d = dateOf(x, t).date;
+    return `<h3 id="v${x.v}">${x.v}${d ? ` <small>· ${d}</small>` : ''}</h3>
+      <ul class="list">${x.notas[lang].filter(n => !isWarn(n)).map(n => `<li>${esc(n)}</li>`).join('')}</ul>
+      <div class="btns">${ghLink(x, t)}</div>`;
+  });
+  return `  <article class="rel" id="s${s}">
+    <div class="rel-head"><h2>${t.serie(s, last.v, top.v)}</h2>${date ? `<time datetime="${esc(when.slice(0, 10))}">${date}</time>` : ''}</div>
+    ${aviso ? `<div class="note warn">${esc(aviso)}</div>\n    ` : ''}<ul class="list">${sum.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
+    ${files.length || gh ? `<div class="btns">${files.join('')}${gh}</div>` : ''}
+    <details style="margin-top:14px"><summary>${t.each}</summary>
+      ${each.join('\n      ')}
+    </details>
+  </article>`;
+}
+
+// versões de teste seguidas da mesma série (1.24.8, 1.24.7, ...) formam uma entrada; uma só continua como entrada normal.
+// O "aviso" de 1.24.0 e 1.24.1 no historico.json é o alerta de teste (⚠️), não um "não use": elas entram no grupo.
+const grupavel = x => x.rel && x.rel.prerelease && (!x.aviso || isWarn(x.aviso.pt));
+const entries = [];
+for (const x of list) {
+  const prev = entries[entries.length - 1];
+  if (grupavel(x) && prev && grupavel(prev[0]) && serieDe(prev[0].v) === serieDe(x.v)) prev.push(x);
+  else entries.push([x]);
 }
 
 function page(t, code) {
@@ -152,7 +199,7 @@ function page(t, code) {
   <section class="first releases">
     <div class="wrap">
       <p class="section-lead">${t.help}</p>
-${list.map(x => item(x, t)).join('\n')}
+${entries.map(e => e.length > 1 ? serie(e, t) : item(e[0], t)).join('\n')}
     </div>
   </section>
 </main>
@@ -180,5 +227,5 @@ for (const [code, t] of Object.entries(L)) {
   const f = path.join(site, t.file);
   fs.mkdirSync(path.dirname(f), { recursive: true });
   fs.writeFileSync(f, page(t, code));
-  console.log(`${t.file}: ${list.length} versões`);
+  console.log(`${t.file}: ${list.length} versões em ${entries.length} entradas`);
 }
