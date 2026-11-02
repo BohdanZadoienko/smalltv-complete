@@ -1,0 +1,20 @@
+{
+  "pt": [
+    "⚠️ ATENÇÃO: VERSÃO DE TESTE QUE PODE QUEBRAR O APARELHO. Ela muda as telas de configuração e de recuperação e ainda não foi testada num relógio. Só instale se souber usar o modo de recuperação e, de preferência, tiver um cabo USB-TTL para regravar. Faça o backup antes",
+    "Configuração por QR code: sem Wi-Fi, a tela mostra um QR que conecta o celular à rede do relógio e, depois, um segundo QR que abre a página de configuração. A rede, a senha e o endereço continuam escritos na tela",
+    "O modo de recuperação também ganha os dois QR codes. O QR é gerado no próprio relógio e nunca contém a senha do Wi-Fi da sua casa",
+    "O tom verde de LCD agora segue a tela que está à mostra: some no Pomodoro, nas fotos e nas mensagens, e continua nos LCDs, no Mundo e no Mundo relógio"
+  ],
+  "en": [
+    "⚠️ WARNING: TEST VERSION THAT MAY BREAK THE DEVICE. It changes the setup and recovery screens and has not been tested on a clock yet. Only install it if you know how to use recovery mode and, ideally, have a USB-TTL cable to reflash. Make the backup first",
+    "QR code setup: without Wi-Fi, the screen shows a QR that connects your phone to the clock's network and then a second QR that opens the setup page. The network, password and address are still written on the screen",
+    "Recovery mode also gets the two QR codes. The QR is generated on the clock itself and never contains your home Wi-Fi password",
+    "The old-LCD green tint now follows the screen being shown: it goes away on the Pomodoro, photos and messages, and stays on the LCD faces, World and World watch"
+  ],
+  "es": [
+    "⚠️ ATENCIÓN: VERSIÓN DE PRUEBA QUE PUEDE ROMPER EL APARATO. Cambia las pantallas de configuración y de recuperación y aún no se probó en un reloj. Instálala solo si sabes usar el modo de recuperación y, de preferencia, tienes un cable USB-TTL para regrabar. Haz la copia antes",
+    "Configuración por código QR: sin Wi-Fi, la pantalla muestra un QR que conecta el celular a la red del reloj y luego un segundo QR que abre la página de configuración. La red, la clave y la dirección siguen escritas en la pantalla",
+    "El modo de recuperación también tiene los dos códigos QR. El QR se genera en el propio reloj y nunca contiene la clave del Wi-Fi de tu casa",
+    "El tono verde de LCD ahora sigue la pantalla que se muestra: desaparece en el Pomodoro, las fotos y los mensajes, y sigue en los LCD, Mundo y Mundo reloj"
+  ]
+}
