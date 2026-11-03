@@ -1,0 +1,16 @@
+{
+  "_sobre": "Metadados dos mostradores embutidos para o site (scripts/site-seo.cjs): nome e descrição em português vêm de smalltv-pomodoro/faces_list.h; aqui ficam o que a lista não tem. A chave é o ID do X() em minúsculas, com - no lugar de _. Mostrador novo em faces_list.h sem entrada aqui faz o script parar. tags: estilos do filtro da galeria (analogico, digital, pixel, esportivo, retro), na mesma ordem do BTAG de web/index.html.",
+  "matrix": { "tags": ["pixel", "digital"], "name_en": "Matrix", "desc_en": "Pixel art with weather and daily focus cards" },
+  "tomato": { "tags": ["pixel"], "name_en": "Tomato", "desc_en": "Pixel art scene that changes with the time and weather" },
+  "analog": { "tags": ["analogico"], "name_en": "Analog", "desc_en": "Baton hands and bold markers" },
+  "weather": { "tags": ["digital"], "name_en": "Weather", "desc_en": "Big temperature and mini cards" },
+  "neon": { "tags": ["digital", "retro"], "name_en": "Neon", "desc_en": "Glowing pink and cyan tubes" },
+  "flip": { "tags": ["digital", "retro"], "name_en": "Flip", "desc_en": "Flipping cards in Bebas Neue" },
+  "lcd": { "tags": ["digital", "retro"], "name_en": "Retro LCD", "desc_en": "80s digital watch (DSEG7 font)" },
+  "words": { "tags": ["digital"], "name_en": "Words", "desc_en": "The time spelled out, in the clock's language" },
+  "forecast": { "tags": ["digital"], "name_en": "Forecast", "desc_en": "Today and the next 4 days, with rain and low/high" },
+  "forecast-cards": { "tags": ["digital"], "name_en": "Forecast cards", "desc_en": "Four days in cards, with the high in focus" },
+  "forecast-lcd": { "tags": ["digital", "retro"], "name_en": "Forecast LCD", "desc_en": "Four days on the retro LCD screen" },
+  "world": { "tags": ["digital"], "name_en": "World", "desc_en": "World map with the day/night band and a dot for your location" },
+  "world-watch": { "tags": ["digital"], "name_en": "World watch", "desc_en": "Wristwatch with a map, city code and time zone" }
+}

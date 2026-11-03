@@ -111,6 +111,8 @@ const j={version:ver,date:new Date().toISOString().slice(0,10),file:prefix+"smal
  notes:require("./"+notas),gz:prefix+"smalltv-pomodoro.bin.gz",gzsize:fs.statSync(w+"/"+dir+"/smalltv-pomodoro.bin.gz").size,...(process.env.LAYOUT||"4M2M")=="4M2M"?{layout:"4m2m"}:{},panel:p.panel,psri:p.psri,
  sig:fs.readFileSync(w+"/"+dir+"/smalltv-pomodoro.bin.sig").toString("base64"),gzsig:fs.readFileSync(w+"/"+dir+"/smalltv-pomodoro.bin.gz.sig").toString("base64")};
 fs.writeFileSync(w+"/"+json,JSON.stringify(j,null,2)+"\n");console.log(json+":",JSON.stringify({version:j.version,size:j.size,gzsize:j.gzsize,panel:j.panel}))' "$W" "$DIR" "$JSON" "$VER" "$NOTAS" "$PREFIX"
+# versão, contagens, galeria estática, SEO do <head> e sitemap.xml: tudo derivado dos JSON acima, do catalog/ e de faces_list.h
+node scripts/site-seo.cjs "$W"
 git -C "$W" add -A
 git -C "$W" status --short
 

@@ -1,6 +1,7 @@
 // Gera a página de versões do site (gh-pages): versoes.html e en/releases.html, da mais nova para a mais antiga.
 //
 // Uso: node scripts/releases-page.cjs <pasta do site> [--releases releases.json]
+// No fim roda o site-seo.cjs, que reescreve title, description, canonical, hreflang e Open Graph destas páginas.
 //
 // Fontes:
 //  - notas/<versão>.json        notas da versão (o publicar.sh exige pt/en/es; o site usa pt e en)
@@ -55,7 +56,7 @@ const L = {
     serie: (s, a, b) => `${s} (teste) — ${a} a ${b}`, each: 'Ver cada versão',
     files: 'Arquivos', gh: 'Ver no GitHub', sig: 'assinatura', sums: 'SHA256SUMS',
     help: 'Pelo <code>/update</code>, envie o <code>.bin.gz</code> sem descompactar; a partir da 1.20.1 envie junto o <code>.bin.gz.sig</code> (a assinatura). O <code>.bin</code> sem compressão serve para gravar pelo cabo USB-TTL. <code>SHA256SUMS.txt</code> confere os arquivos.',
-    count: n => `${n} versões`, nav: ['Início', 'Galeria', 'Versões', 'Jogo'], navHref: ['./', 'galeria.html', 'versoes.html', 'jogo.html'],
+    count: n => `${n} versões`, nav: ['Início', 'Galeria', 'Docs', 'Versões', 'Jogo'], navHref: ['./', 'galeria.html', 'docs.html', 'versoes.html', 'jogo.html'],
     other: 'en/releases.html', otherLang: 'EN', foot: 'English',
     date: { locale: 'pt-BR', opt: { day: 'numeric', month: 'short', year: 'numeric' } },
   },
@@ -68,7 +69,7 @@ const L = {
     serie: (s, a, b) => `${s} (test) — ${a} to ${b}`, each: 'See each version',
     files: 'Files', gh: 'View on GitHub', sig: 'signature', sums: 'SHA256SUMS',
     help: 'Through <code>/update</code>, send the <code>.bin.gz</code> without unpacking it; from 1.20.1 on, send the <code>.bin.gz.sig</code> (the signature) with it. The uncompressed <code>.bin</code> is for flashing over a USB-TTL cable. <code>SHA256SUMS.txt</code> checks the files.',
-    count: n => `${n} releases`, nav: ['Home', 'Gallery', 'Releases', 'Game'], navHref: ['./', 'gallery.html', 'releases.html', 'game.html'],
+    count: n => `${n} releases`, nav: ['Home', 'Gallery', 'Docs', 'Releases', 'Game'], navHref: ['./', 'gallery.html', 'docs.html', 'releases.html', 'game.html'],
     other: 'versoes.html', otherLang: 'PT', foot: 'Português',
     date: { locale: 'en-US', opt: { day: 'numeric', month: 'short', year: 'numeric' } },
   },
@@ -153,7 +154,7 @@ for (const x of list) {
 }
 
 function page(t, code) {
-  const nav = t.nav.map((n, i) => `<a href="${t.navHref[i]}"${i === 2 ? ' aria-current="page"' : ''}>${n}</a>`).join('\n      ');
+  const nav = t.nav.map((n, i) => `<a href="${t.navHref[i]}"${i === 3 ? ' aria-current="page"' : ''}>${n}</a>`).join('\n      ');
   return `<!doctype html>
 <html lang="${t.lang}">
 <head>
@@ -170,7 +171,7 @@ function page(t, code) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Silkscreen&display=swap">
-<link rel="stylesheet" href="${t.root}style.css?v=15">
+<link rel="stylesheet" href="${t.root}style.css?v=18">
 </head>
 <body>
 <!-- gerado por scripts/releases-page.cjs (repositório principal); não edite à mão -->
@@ -229,3 +230,4 @@ for (const [code, t] of Object.entries(L)) {
   fs.writeFileSync(f, page(t, code));
   console.log(`${t.file}: ${list.length} versões em ${entries.length} entradas`);
 }
+execFileSync(process.execPath, [path.join(__dirname, 'site-seo.cjs'), site], { stdio: 'inherit' });
