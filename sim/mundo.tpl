@@ -1,0 +1,310 @@
+// Mostrador Mundo: o mapa-múndi é o protagonista. Mapa de 208 x 80 pixels no visor do LCD retrô, com a noite
+// sombreada sobre a terra e o mar, a borda do crepúsculo pontilhada, o sol onde ele está a pino e o ponto da cidade
+// do clima piscando com o código dela; embaixo, dia, data, fuso e a hora em DSEG7. Registrado em faces_list.h.
+#include "ui_kit.h"
+#include "assets.h"
+
+// mesmas cores do LCD retrô (face_lcd.cpp); LCD_OFF é o indicador apagado, ainda legível
+static const uint16_t LCD_BG = uiRgb(166, 180, 140), LCD_ON = uiRgb(18, 24, 16), LCD_GHOST = uiRgb(161, 175, 136);
+static const uint16_t LCD_EDGE = uiRgb(140, 154, 116), LCD_OFF = uiRgb(132, 146, 108);
+
+// ---------- mapa ----------
+// 208 x 80 pixels, 1 bit cada: equiretangular, longitude -180..180 e latitude 78..-60 (1,73 grau por pixel).
+// Gerado por sim/gerar_mapa.js, 26 bytes por linha, bit mais alto à esquerda.
+static const int MAP_W = 208, MAP_H = 80, MAP_X = 16, MAP_Y = 33;
+static const uint8_t MAP[MAP_H][MAP_W / 8] PROGMEM = {
+@MAPA@
+};
+
+// Seno em inteiros: ângulo em 1/4096 de volta, quarto de onda com 65 pontos (255 = 1) e interpolação entre eles
+static const uint8_t SIN_Q[65] PROGMEM = {@SEN@};
+static int isin(int a) {
+  a &= 4095;
+  int i = a & 1023;
+  if (a & 1024) i = 1024 - i;
+  int k = i >> 4, f = i & 15, v = pgm_read_byte(&SIN_Q[k]);
+  if (f) v += (pgm_read_byte(&SIN_Q[k + 1]) - v) * f >> 4;
+  return a & 2048 ? -v : v;
+}
+static int icos(int a) { return isin(a + 1024); }
+static int angle(int deg10) { return deg10 * 256 / 225; }  // décimos de grau -> 1/4096 de volta
+
+// Dia e noite pela hora UTC, sem float: o sol está a pino na longitude -(hora UTC - 12 h) · 15 °/h e na
+// declinação de -23,4° · cos(2π (dia do ano + 10) / 365). Um pixel é noite quando o seno da altura do sol
+// no centro dele (senφ senδ + cosφ cosδ cosH) é negativo; sem a equação do tempo (erro de poucos graus).
+struct Sun { int sinD, cosD, decl10, utcMin; bool ok; };
+static Sun sunNow(const UiState &s) {
+  Sun u = {0, 255, 0, 0, s.timeOk};
+  if (!u.ok) return u;
+  u.decl10 = -234 * icos((s.now.tm_yday + 10) * 4096 / 365) / 255;
+  u.sinD = isin(angle(u.decl10));
+  u.cosD = icos(angle(u.decl10));
+  u.utcMin = ((s.now.tm_hour * 60 + s.now.tm_min - s.utcOff / 60) % 1440 + 1440) % 1440;
+  return u;
+}
+static int lat10Row(int r) { return 780 - (2 * r + 1) * 69 / 8; }       // centro da linha (1,725° cada)
+static int lon10Col(int c) { return -1800 + (2 * c + 1) * 225 / 26; }  // centro da coluna (1,73° cada)
+// Noite em cada pixel da linha r (bit c); fora do mapa vale a linha da borda
+static void nightRow(const Sun &u, const int16_t *cosH, int r, uint8_t *bits) {
+  memset(bits, 0, MAP_W / 8);
+  if (!u.ok) return;
+  r = r < 0 ? 0 : r > MAP_H - 1 ? MAP_H - 1 : r;
+  const int a = angle(lat10Row(r)), A = isin(a) * u.sinD * 255, B = icos(a) * u.cosD;
+  for (int c = 0; c < MAP_W; c++)
+    if (A + B * cosH[c] < 0) bits[c >> 3] |= 0x80 >> (c & 7);
+}
+static bool nightAt(const uint8_t *b, int c) { return b[c >> 3] >> (7 - (c & 7)) & 1; }
+
+// Posição do sol a pino, em pixels do mapa
+static void sunPos(const Sun &u, int *x, int *y) {
+  int lon10 = -(u.utcMin - 720) * 5 / 2;
+  *x = ((lon10 + 1800) * MAP_W / 3600 % MAP_W + MAP_W) % MAP_W;
+  *y = (780 - u.decl10) * MAP_H / 1380;
+}
+
+// Ponto do local: pixel do mapa da cidade do clima
+static bool dotPos(const UiState &s, int *x, int *y) {
+  if (!s.hasLoc) return false;
+  int xx = (s.lon10 + 1800) * MAP_W / 3600, yy = (780 - s.lat10) * MAP_H / 1380;  // sem constrain: não existe no simulador
+  *x = xx < 0 ? 0 : xx > MAP_W - 1 ? MAP_W - 1 : xx;
+  *y = yy < 0 ? 0 : yy > MAP_H - 1 ? MAP_H - 1 : yy;
+  return true;
+}
+// Retângulo (na tela) de 7 x 7 px centrado no ponto, sem sair do mapa
+static bool dotRect(const UiState &s, int *x, int *y) {
+  int px, py;
+  if (!dotPos(s, &px, &py)) return false;
+  px -= 3; py -= 3;
+  *x = MAP_X + (px < 0 ? 0 : px > MAP_W - 7 ? MAP_W - 7 : px);
+  *y = MAP_Y + (py < 0 ? 0 : py > MAP_H - 7 ? MAP_H - 7 : py);
+  return true;
+}
+
+// Código da cidade: as 3 primeiras letras do nome em maiúsculas ASCII ("Florianópolis" -> FLO, "São Paulo" -> SAO).
+// Acentos do Latin-1 em UTF-8 (0xC3 0x80..0xBF) viram a letra sem acento.
+static const char FOLD[65] PROGMEM = "AAAAAAACEEEEIIIIDNOOOOO.OUUUUY..AAAAAAACEEEEIIIIDNOOOOO.OUUUUY.Y";
+static void cityCode(const char *c, char *out) {
+  int n = 0;
+  for (const uint8_t *p = (const uint8_t *)(c ? c : ""); *p && n < 3; p++) {
+    char ch = 0;
+    if (*p >= 'a' && *p <= 'z') ch = *p - 32;
+    else if (*p >= 'A' && *p <= 'Z') ch = *p;
+    else if (*p == 0xC3 && p[1] >= 0x80 && p[1] <= 0xBF) ch = pgm_read_byte(&FOLD[*++p - 0x80]);
+    if (ch >= 'A' && ch <= 'Z') out[n++] = ch;
+  }
+  out[n] = 0;
+}
+// Canto do sol (11 x 11 px), na tela, sem sair do mapa
+static void sunRect(const Sun &u, int *x, int *y) {
+  int sx, sy;
+  sunPos(u, &sx, &sy);
+  sx -= 5; sy -= 5;
+  *x = MAP_X + (sx < 0 ? 0 : sx > MAP_W - 11 ? MAP_W - 11 : sx);
+  *y = MAP_Y + (sy < 0 ? 0 : sy > MAP_H - 11 ? MAP_H - 11 : sy);
+}
+// Etiqueta do código: 19 x 9 px (as letras e 1 px de fundo claro em volta), encostada no alvo, do lado que cabe
+// no mapa e cobre menos terra; nunca em cima do sol. Empate: na ordem da lista.
+static const int TAG_W = 19, TAG_H = 9;
+static const int8_t TAG_AT[8][2] PROGMEM = {{7, -1}, {-19, -1}, {-6, -9}, {-6, 7}, {7, -9}, {-19, -9}, {7, 7}, {-19, 7}};  // direita, esquerda, cima, baixo e as diagonais, a partir do canto do alvo
+static bool tagRect(const UiState &s, const Sun &u, int *x, int *y) {
+  int dx, dy, sx = -99, sy = -99, best = -1;
+  if (!dotRect(s, &dx, &dy)) return false;
+  if (u.ok) sunRect(u, &sx, &sy);
+  for (int k = 0; k < 8; k++) {
+    const int tx = dx + (int8_t)pgm_read_byte(&TAG_AT[k][0]), ty = dy + (int8_t)pgm_read_byte(&TAG_AT[k][1]);
+    if (tx < MAP_X || ty < MAP_Y || tx + TAG_W > MAP_X + MAP_W || ty + TAG_H > MAP_Y + MAP_H) continue;
+    int cost = k;  // cada pixel de terra pesa mais que a ordem
+    if (tx < sx + 11 && tx + TAG_W > sx && ty < sy + 11 && ty + TAG_H > sy) cost += 4096;
+    for (int r = ty - MAP_Y; r < ty - MAP_Y + TAG_H; r++)
+      for (int c = tx - MAP_X; c < tx - MAP_X + TAG_W; c++) cost += (pgm_read_byte(&MAP[r][c >> 3]) >> (7 - (c & 7)) & 1) * 8;
+    if (best < 0 || cost < best) {
+      best = cost;
+      *x = tx;
+      *y = ty;
+    }
+  }
+  return best >= 0;
+}
+
+struct MapCtx { const UiState *s; int x0, y0, x1, y1; bool tick; };  // retângulo em pixels do mapa (inclusivo)
+// Pixel aceso: terra de dia em xadrez, terra de noite cheia, mar de dia vazio, mar de noite em pontos espaçados.
+// A borda do lado da noite sai pontilhada, invertida (clara na terra, escura no mar) para se ler sobre os dois.
+static void paintMap(void *p) {
+  MapCtx *m = (MapCtx *)p;
+  const UiState &s = *m->s;
+  Sun u = sunNow(s);
+  int r0 = m->y0, r1 = m->y1;
+  if (uiClip.on) {  // faixa de uiOffscreen: só as linhas dela
+    if (r0 < uiClip.y0 - MAP_Y) r0 = uiClip.y0 - MAP_Y;
+    if (r1 > uiClip.y1 - 1 - MAP_Y) r1 = uiClip.y1 - 1 - MAP_Y;
+  }
+  int16_t cosH[MAP_W];
+  for (int c = 0; c < MAP_W; c++) cosH[c] = icos(angle(lon10Col(c) + (u.utcMin - 720) * 5 / 2));
+  uint8_t nb[3][MAP_W / 8];  // noite nas linhas r - 1, r e r + 1
+  for (int r = r0; r <= r1; r++) {
+    if (r == r0) {
+      nightRow(u, cosH, r - 1, nb[0]);
+      nightRow(u, cosH, r, nb[1]);
+    } else {
+      memcpy(nb[0], nb[1], MAP_W / 8);
+      memcpy(nb[1], nb[2], MAP_W / 8);
+    }
+    nightRow(u, cosH, r + 1, nb[2]);
+    const int y = MAP_Y + r;
+    G->drawFastHLine(MAP_X + m->x0, y, m->x1 - m->x0 + 1, LCD_BG);
+    int run = -1;  // início da sequência acesa
+    for (int c = m->x0; c <= m->x1 + 1; c++) {
+      bool on = false;
+      if (c <= m->x1) {
+        const bool land = pgm_read_byte(&MAP[r][c >> 3]) >> (7 - (c & 7)) & 1, n = nightAt(nb[1], c);
+        on = land ? n || !((c + r) & 1) : n && !(c & 1) && !(r & 1);
+        if (n) {
+          const bool side = !nightAt(nb[1], c ? c - 1 : MAP_W - 1) || !nightAt(nb[1], c < MAP_W - 1 ? c + 1 : 0);
+          const bool vert = !nightAt(nb[0], c) || !nightAt(nb[2], c);
+          if ((side && !(r & 1)) || (vert && !(c & 1))) on = !land;
+        }
+      }
+      if (on && run < 0) run = c;
+      if (!on && run >= 0) {
+        G->drawFastHLine(MAP_X + run, y, c - run, LCD_ON);
+        run = -1;
+      }
+    }
+  }
+  if (u.ok) {  // sol (11 x 11 com margem clara)
+    int sx, sy;
+    sunRect(u, &sx, &sy);
+    uiSprite(&SPR_SOL_LCD, sx, sy);
+  }
+  int tx, ty, dx, dy;
+  char code[4];
+  cityCode(s.city, code);
+  if (code[0] && tagRect(s, u, &tx, &ty)) {
+    G->fillRect(tx, ty, TAG_W, TAG_H, LCD_BG);
+    text(tx + 1 + (17 - textW(code, 1)) / 2, ty + 1, 1, LCD_ON, code);
+  }
+  if (m->tick && dotRect(s, &dx, &dy)) {  // alvo: aro de 5 x 5 e miolo, com margem clara
+    G->fillRect(dx, dy, 7, 7, LCD_BG);
+    G->drawRect(dx + 1, dy + 1, 5, 5, LCD_ON);
+    G->drawPixel(dx + 3, dy + 3, LCD_ON);
+  }
+}
+
+// ---------- indicadores: ícone em pixel art e rótulo, acesos ou apagados (como MUTE / ALM / SIG) ----------
+// Na linha de baixo: o primeiro encostado à esquerda, o do meio centrado e o último encostado à direita.
+struct IconCtx { bool on[3]; };
+static const UiSprite *const ICONS[3] PROGMEM = {&SPR_ICONE_TOMATE_LCD, &SPR_ICONE_GOTA_LCD, &SPR_ICONE_WIFI_LCD};
+static const int ICON_Y = 194;
+static void paintIcons(void *p) {
+  IconCtx *ic = (IconCtx *)p;
+  const char *label[3] = {tr("FOCO", "FOCUS", "FOCO"), tr("CHUVA", "RAIN", "LLUVIA"), "WI-FI"};
+  G->fillRect(14, ICON_Y, 212, 12, LCD_BG);
+  for (int k = 0; k < 3; k++) {
+    const int w = 16 + textW(label[k], 1), x = k == 0 ? 16 : k == 1 ? 120 - w / 2 : 224 - w;
+    const uint16_t c = ic->on[k] ? LCD_ON : LCD_OFF;
+    UiSprite sp;
+    memcpy_P(&sp, pgm_read_ptr(&ICONS[k]), sizeof sp);
+    for (int i = 0; i < sp.w * sp.h; i++) {
+      uint8_t b = pgm_read_byte(sp.px + i / 2);
+      if (i & 1 ? b & 15 : b >> 4) G->drawPixel(x + i % sp.w, ICON_Y + i / sp.w, c);
+    }
+    text(x + 16, ICON_Y + 3, 1, c, label[k]);
+  }
+}
+
+// ---------- linha do dia: dia da semana, data em segmentos e fuso ----------
+static void paintDay(void *p) {
+  const UiState &s = *(const UiState *)p;
+  G->fillRect(14, 118, 212, 18, LCD_BG);
+  text(16, 119, 2, LCD_ON, s.timeOk ? WD[s.now.tm_wday] : "---");
+  int a = s.timeOk ? s.now.tm_mday : -1, b = s.timeOk ? s.now.tm_mon + 1 : -1;
+  if (uiLang == 1) { int t = a; a = b; b = t; }  // mês-dia em inglês
+  const int H = 16, P = 12;  // dígitos de 16 px (10 de largura)
+  int x = 62;
+  for (int k = 0; k < 2; k++) {
+    int v = k ? b : a;
+    dsegDigit(x, 119, H, v >= 10 ? v / 10 : -1, LCD_ON, LCD_GHOST);
+    dsegDigit(x + P, 119, H, v < 0 ? 10 : v % 10, LCD_ON, LCD_GHOST);
+    x += 2 * P;
+    if (!k) {
+      G->fillRect(x, 126, 6, 2, LCD_ON);  // traço, como o "6-30" do relógio de pulso
+      x += 10;
+    }
+  }
+  char tz[12] = "UTC";
+  const int off = s.utcOff / 60, h = (off < 0 ? -off : off) / 60, mi = (off < 0 ? -off : off) % 60;
+  if (off && mi) snprintf(tz, sizeof tz, "UTC%c%d:%02d", off < 0 ? '-' : '+', h, mi);
+  else if (off) snprintf(tz, sizeof tz, "UTC%c%d", off < 0 ? '-' : '+', h);
+  textR(224, 119, 2, LCD_ON, tz);
+}
+
+void themeWorld(const UiState &s, bool full) {
+  if (full) {
+    textC(120, 9, 1, uiRgb(170, 170, 182), lcdLabel(2));
+    G->fillRoundRect(8, 24, 224, 186, 14, LCD_BG);
+    G->drawFastHLine(22, 25, 196, LCD_EDGE);  // sombra interna
+    G->drawFastHLine(22, 26, 196, uiRgb(152, 165, 128));
+    G->drawRect(MAP_X - 2, MAP_Y - 2, MAP_W + 4, MAP_H + 4, LCD_EDGE);
+  }
+  // mapa: noite, sol e etiqueta andam a cada minuto; o ponto pisca uma vez por segundo
+  const bool tick = !s.timeOk || s.now.tm_sec % 2 == 0;
+  char code[4], key[40];
+  cityCode(s.city, code);
+  snprintf(key, sizeof key, "%d %d %d %d %s", s.timeOk ? s.now.tm_yday * 1440 + s.now.tm_hour * 60 + s.now.tm_min : -1, (int)(s.utcOff / 60), s.hasLoc ? s.lat10 : -9999, s.lon10, code);
+  if (changed(cA, key) || full) {
+    MapCtx m = {&s, 0, 0, MAP_W - 1, MAP_H - 1, tick};
+    uiPaint(false, MAP_X, MAP_Y, MAP_W, MAP_H, paintMap, &m);
+    lastRing = tick;
+  } else if (tick != lastRing) {
+    int x, y;
+    if (dotRect(s, &x, &y)) {  // só os pixels sob o alvo
+      MapCtx m = {&s, x - MAP_X, y - MAP_Y, x - MAP_X + 6, y - MAP_Y + 6, tick};
+      uiPaint(false, x, y, 7, 7, paintMap, &m);
+    }
+    lastRing = tick;
+  }
+  // indicadores: FOCO com o Pomodoro rodando, CHUVA com o aviso de chuva ativo e WI-FI conectado
+  IconCtx ic = {{s.running, s.wx.rainIn > 0, s.ip && s.ip[0] && strcmp(s.ip, "0.0.0.0")}};
+  char ik[8];
+  snprintf(ik, sizeof ik, "%d%d%d%d", ic.on[0], ic.on[1], ic.on[2], uiLang);
+  if (changed(cC, ik)) uiPaint(false, 14, ICON_Y, 212, 12, paintIcons, &ic);
+  // dia da semana, data e fuso
+  char dk[32];
+  snprintf(dk, sizeof dk, "%d %d %d %d %d", s.timeOk ? s.now.tm_wday : -1, s.timeOk ? s.now.tm_mday : 0, s.timeOk ? s.now.tm_mon : 0, (int)(s.utcOff / 60), uiLang);
+  if (changed(cStatL, dk)) uiPaint(false, 14, 118, 212, 18, paintDay, (void *)&s);
+  // horas e minutos em DSEG7 de 48 px (o que cabe entre a linha do dia e os ícones), com os segmentos apagados à
+  // mostra; segundos de 28 px e AM/PM sobre eles. O bloco (195 px) fica centrado.
+  const int X[4] = {22, 57, 106, 141}, XS = 179, Y = 141, H = 48;
+  const int ampm = s.hour12 && s.timeOk ? (s.now.tm_hour < 12 ? 1 : 2) : 0;
+  if (full || ampm != lastWxOn) {
+    G->fillRect(XS, Y + 2, 12, 8, LCD_BG);
+    if (ampm) text(XS, Y + 2, 1, LCD_ON, ampm == 1 ? "AM" : "PM");
+    lastWxOn = ampm;
+  }
+  int v[4] = {-1, -1, -1, -1};
+  if (s.timeOk) {
+    int h = displayHour(s);
+    v[0] = h / 10; v[1] = h % 10; v[2] = s.now.tm_min / 10; v[3] = s.now.tm_min % 10;
+    if (v[0] == 0) v[0] = -1;
+  }
+  for (int i = 0; i < 4; i++)
+    if (full || lastDig[i] != v[i]) {
+      dsegDigit(X[i], Y, H, v[i], LCD_ON, LCD_GHOST);
+      lastDig[i] = v[i];
+    }
+  if (full || (int)tick != lastColon) {
+    G->fillRect(94, Y + 13, 5, 5, tick ? LCD_ON : LCD_GHOST);
+    G->fillRect(94, Y + 31, 5, 5, tick ? LCD_ON : LCD_GHOST);
+    lastColon = tick;
+  }
+  int sec = s.timeOk ? s.now.tm_sec : -1;
+  if (full || sec != lastSecW) {
+    dsegDigit(XS, Y + H - 28, 28, sec < 0 ? -1 : sec / 10, LCD_ON, LCD_GHOST);
+    dsegDigit(XS + 21, Y + H - 28, 28, sec < 0 ? -1 : sec % 10, LCD_ON, LCD_GHOST);
+    lastSecW = sec;
+  }
+  if (changed(cStatR, s.ip ? s.ip : "")) {
+    G->fillRect(0, 216, 240, 12, BG);
+    textC(120, 220, 1, MUTED, cStatR.s);
+  }
+}

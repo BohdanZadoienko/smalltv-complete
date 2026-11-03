@@ -80,6 +80,7 @@ fs.writeFileSync(out,`#include "${header}"
 #include <cstdio>
 #include <cctype>
 #include <limits>
+#include <vector>
 #define F(s) (s)
 #define PSTR(s) (s)
 struct String:std::string {
@@ -148,9 +149,13 @@ int main(){
   const std::string nm=q({12})+"SmallTV-1a2b"+q({5})+"local"+q({0});
   auto ask=[&](const std::string&s,bool*qu=nullptr){return mdnsAsksFor((const uint8_t*)s.data(),s.size(),"smalltv-1a2b",qu);};
   bool qu=false;
-  assert(ask(hdr+nm+q({0,1,0,1}),&qu)&&!qu);
-  assert(ask(hdr+nm+q({0,255,0x80,1}),&qu)&&qu);
-  assert(!ask(hdr+nm+q({0,28,0,1})));                       // AAAA: não respondemos
+  assert(ask(hdr+nm+q({0,1,0,1}),&qu)==MDNS_A&&!qu);
+  assert(ask(hdr+nm+q({0,255,0x80,1}),&qu)==(MDNS_A|MDNS_AAAA)&&qu);
+  assert(ask(hdr+nm+q({0,28,0x80,1}),&qu)==MDNS_AAAA&&qu);  // AAAA (o Windows pergunta junto com o A)
+  assert(!ask(hdr+nm+q({0,16,0,1})));                       // TXT: não respondemos
+  {std::string two=q({0,0,0,0,0,2,0,0,0,0,0,0})+nm+q({0,1,0,1})+q({0xC0,12,0,28,0x80,1});  // A e AAAA no mesmo pacote
+   assert(ask(two,&qu)==(MDNS_A|MDNS_AAAA)&&qu);
+   assert(ask(two.substr(0,two.size()-2),&qu)==MDNS_A&&!qu);}  // a 2ª pergunta cortada: vale a 1ª
   assert(!ask(hdr+nm+q({0,1,0,3})));                        // classe diferente de IN
   assert(!ask(hdr+nm+q({0,1})));                            // pergunta cortada
   std::string resp=hdr+nm+q({0,1,0,1});resp[2]=(char)0x84;assert(!ask(resp));  // é resposta, não pergunta
@@ -161,13 +166,36 @@ int main(){
   assert(!ask(hdr+q({0xC0,12,0,1,0,1})));                   // ponteiro para si mesmo: laço limitado
   assert(!ask(hdr+q({0xC0,200,0,1,0,1})));                  // ponteiro para fora do pacote
   assert(!ask(hdr.substr(0,11)));
-  uint8_t o[80],ip[4]={192,168,1,9};
+  uint8_t o[96],ip[4]={192,168,1,9};
   size_t m=mdnsAnswer(o,sizeof o,"smalltv-1a2b",ip,0x1234,false);
   assert(m==12+20+10+4&&o[0]==0&&o[1]==0&&o[2]==0x84&&o[7]==1&&o[5]==0&&!memcmp(o+m-4,ip,4)&&o[12+20+2]==0x80);
   m=mdnsAnswer(o,sizeof o,"smalltv-1a2b",ip,0x1234,true);
   assert(m==12+20+4+2+10+4&&o[0]==0x12&&o[1]==0x34&&o[5]==1&&o[36]==0xC0&&o[37]==12&&!memcmp(o+m-4,ip,4));
   {size_t j=12;char nb[64];assert(dnsReadName(o,m,j,nb,sizeof nb)&&!strcmp(nb,"smalltv-1a2b.local")&&j==32);}
   assert(!mdnsAnswer(o,40,"smalltv-1a2b",ip,0,false));
+  assert(!mdnsAnswer(o,sizeof o,"smalltv-1a2b",ip,0,false,0));
+  // percorre os registros de uma resposta: tipo, tamanho e dados de cada um, terminando no fim exato do pacote
+  auto rrs=[&](const uint8_t*p,size_t n){std::vector<std::pair<int,std::string>> v;size_t j=12;char nb[64];
+   unsigned qd=p[4]<<8|p[5],rr=(p[6]<<8|p[7])+(p[10]<<8|p[11]);
+   for(unsigned k=0;k<qd;k++){assert(dnsReadName(p,n,j,nb,sizeof nb)&&j+4<=n);j+=4;}
+   for(unsigned k=0;k<rr;k++){assert(dnsReadName(p,n,j,nb,sizeof nb)&&!strcmp(nb,"smalltv-1a2b.local")&&j+10<=n);
+    int t=p[j]<<8|p[j+1];size_t l=p[j+8]<<8|p[j+9];assert(j+10+l<=n);v.push_back({t,std::string((const char*)p+j+10,l)});j+=10+l;}
+   assert(j==n);return v;};
+  const std::string v4((const char*)ip,4),mapped=std::string(10,0)+std::string(2,(char)0xFF)+v4;
+  m=mdnsAnswer(o,sizeof o,"smalltv-1a2b",ip,0,false,MDNS_AAAA);   // só o AAAA: ele na resposta e o A como adicional
+  assert(m==12+20+10+16+2+10+4&&o[7]==1&&o[11]==1);
+  {auto v=rrs(o,m);assert(v.size()==2&&v[0].first==28&&v[0].second==mapped&&v[1].first==1&&v[1].second==v4);}
+  m=mdnsAnswer(o,sizeof o,"smalltv-1a2b",ip,0,false,MDNS_A|MDNS_AAAA);  // os dois na resposta
+  assert(o[7]==2&&o[11]==0);{auto v=rrs(o,m);assert(v.size()==2&&v[0].first==1&&v[1].first==28&&v[1].second==mapped);}
+  m=mdnsAnswer(o,sizeof o,"smalltv-1a2b",ip,0x4321,true,MDNS_AAAA);  // resolvedor comum: repete a pergunta do AAAA
+  assert(m==12+20+4+2+10+16+2+10+4&&o[0]==0x43&&o[5]==1&&o[32]==0&&o[33]==28);
+  {auto v=rrs(o,m);assert(v.size()==2&&v[0].first==28&&v[1].first==1);}
+  assert(!mdnsAnswer(o,m-1,"smalltv-1a2b",ip,0x4321,true,MDNS_AAAA));  // não cabe: nada
+  assert(mdnsHasAnswer(o,m,"smalltv-1a2b"));
+  {uint32_t r=12345;for(int t=0;t<20000;t++){  // pacotes aleatórios (com nomes de verdade às vezes): sem ler fora
+    uint8_t b[256];size_t n=12+(r=r*1103515245+12345)%240;for(size_t k=0;k<n;k++)b[k]=(uint8_t)((r=r*1103515245+12345)>>16);
+    b[2]&=t&1?0xFF:0x07;b[4]=0;b[5]=b[5]%4;if(t%3==0&&n>40)memcpy(b+12,nm.data(),nm.size());
+    bool x;mdnsAsksFor(b,n,"smalltv-1a2b",&x);mdnsHasAnswer(b,n,"smalltv-1a2b");}}
   // sondagem: a pergunta que o relógio manda e a resposta de outro relógio que já usa o nome
   m=mdnsProbeQuery(o,sizeof o,"smalltv");
   assert(m==12+15+4&&o[5]==1&&o[2]==0&&o[m-4]==0&&o[m-3]==255&&o[m-2]==0x80);

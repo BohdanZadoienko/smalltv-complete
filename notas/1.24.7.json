@@ -1,0 +1,20 @@
+{
+  "pt": [
+    "⚠️ ATENÇÃO: VERSÃO DE TESTE QUE PODE QUEBRAR O APARELHO. Ela reorganiza a memória e ainda não foi testada num relógio. Só instale se souber usar o modo de recuperação e, de preferência, tiver um cabo USB-TTL para regravar. Faça o backup antes",
+    "Mostrador novo Mundo: mapa-múndi em destaque no visor de LCD, com a faixa de dia e noite andando com a hora, o sol a pino e o código da sua cidade piscando",
+    "Mostrador novo Mundo relógio: no estilo de um relógio de pulso world time, com FOCO, CHUVA e WI-FI em caixas, a cidade e o fuso",
+    "A cidade e o fuso vêm da cidade do clima; o tom verde de LCD e a troca suave entre os LCDs valem também para os dois"
+  ],
+  "en": [
+    "⚠️ WARNING: TEST VERSION THAT MAY BREAK THE DEVICE. It reorganizes the storage and has not been tested on a clock yet. Only install it if you know how to use recovery mode and, ideally, have a USB-TTL cable to reflash. Make the backup first",
+    "New World face: a world map front and center on the LCD screen, with the day/night band moving with the time, the overhead sun and your city's code blinking",
+    "New World watch face: in the style of a world time wristwatch, with FOCUS, RAIN and WI-FI in boxes, the city and the time zone",
+    "The city and time zone come from the weather city; the old-LCD green tint and the smooth switch between LCD faces also work on both"
+  ],
+  "es": [
+    "⚠️ ATENCIÓN: VERSIÓN DE PRUEBA QUE PUEDE ROMPER EL APARATO. Reorganiza la memoria y aún no se probó en un reloj. Instálala solo si sabes usar el modo de recuperación y, de preferencia, tienes un cable USB-TTL para regrabar. Haz la copia antes",
+    "Esfera nueva Mundo: mapamundi destacado en la pantalla LCD, con la franja de día y noche que avanza con la hora, el sol en el cenit y el código de tu ciudad parpadeando",
+    "Esfera nueva Mundo reloj: al estilo de un reloj de pulsera world time, con FOCO, LLUVIA y WI-FI en cajas, la ciudad y la zona horaria",
+    "La ciudad y la zona horaria vienen de la ciudad del clima; el tono verde de LCD y el cambio suave entre los LCD también valen para las dos"
+  ]
+}

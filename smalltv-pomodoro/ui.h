@@ -64,6 +64,10 @@ struct UiState {
   const char *ip;
   uint32_t ms;     // millis(): anda as animações
   bool celebrate;  // uma fase do Pomodoro acabou de terminar: toca a animação de fim
+  // local e fuso (mostrador Mundo)
+  int32_t utcOff;        // hora local - UTC agora, em segundos
+  int16_t lat10, lon10;  // local da cidade do clima, em décimos de grau
+  bool hasLoc;           // há cidade salva (lat/lon valem)
 };
 
 constexpr uint16_t uiRgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -154,6 +158,8 @@ extern uint32_t uiEnters;                    // contador de trocas de tela intei
 void uiRenderClock(const UiState &s);        // tela de relógio no tema escolhido
 void uiRenderPomodoro(const UiState &s);     // anel de progresso do Pomodoro
 void uiMessage(const char *title, const char *l1, const char *l2, const char *l3);
+// Duas etapas da rede temporária: QR Wi-Fi e, com um celular conectado, QR do endereço local.
+void uiWifiSetup(const char *ssid, const char *pass, const char *ip, bool connected, bool recovery);
 void uiMessageLine(const char *l1);              // troca só a linha de destaque da mensagem na tela
 void uiBootProgress(uint32_t ms, uint8_t done);  // barra e etapas da tela de início (só com uiMessage na tela)
 void uiSyncHint(uint32_t ms);                    // "sincronizando" por cima do mostrador, enquanto não há hora
