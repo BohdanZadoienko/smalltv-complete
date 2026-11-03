@@ -12,6 +12,7 @@
 #include "../smalltv-pomodoro/ui_kit.h"
 #include "../smalltv-pomodoro/assets.h"
 #include "../smalltv-pomodoro/facepack.h"
+#include "../smalltv-pomodoro/setup_qr.h"
 #include "../smalltv-pomodoro/warm.h"
 #include <chrono>
 #include <dirent.h>
@@ -51,7 +52,10 @@ static UiState base(int h, int m, int s) {
   st.timeOk = true;
   st.now.tm_year = 126; st.now.tm_mon = 9; st.now.tm_mday = 20; st.now.tm_wday = 2;
   st.now.tm_hour = h; st.now.tm_min = m; st.now.tm_sec = s;
+  st.now.tm_yday = 292;  // 20 de outubro
   st.now.tm_isdst = -1;
+  st.utcOff = -3 * 3600;  // Florianópolis: UTC-3, -27,6° -48,5°
+  st.lat10 = -276; st.lon10 = -485; st.hasLoc = true;
   st.longEvery = 4;
   st.dailyGoal = 8;
   st.today = 3;
@@ -198,9 +202,14 @@ static int checkSlide() {
   Panel *p = new Panel();
   Frame *a = new Frame(), *b = new Frame();
   PN = p;
+  // entre dois mostradores LCD a troca é a da tinta (checkLcdCurtain), não a rolagem
+  auto lcd = [](int t) { return t == THEME_LCD || t == THEME_FORECAST_LCD || t == THEME_WORLD || t == THEME_WORLD_WATCH; };
+  int n = 0;
   for (int flip = 0; flip < 2; flip++)
     for (int t = 0; t < THEME_COUNT; t++) {
       int u = (t + 1) % THEME_COUNT;
+      if (lcd(t) && lcd(u)) continue;
+      n++;
       UiState sa = base(14, 58, 50), sb = base(14, 58, 50);
       sa.theme = t;
       sb.theme = u;
@@ -235,7 +244,6 @@ static int checkSlide() {
     }
   uiScrollHw = nullptr;
   uiBlit = nullptr;
-  int n = 2 * THEME_COUNT;
   if (!fails) printf("troca por rolagem de hardware: ok (%d trocas, as duas orientações); em media %ld comandos de rolagem e %ld KB no SPI por troca; CPU de desenho %ld,%ld vezes um desenho completo\n", n, cmds / n, bytes / n / 1024, (long)(tSlide / tFull * 10) / 10, (long)(tSlide / tFull * 10) % 10);
   delete p; delete a; delete b;
   return fails;
@@ -264,8 +272,11 @@ static int checkLcdCurtain() {
   Frame *f = new Frame(), *a = new Frame(), *b = new Frame();
   segmentosF = f;
   segmentosA = a;
-  for (int dir = 0; dir < 2; dir++) {
-    int from = dir ? THEME_FORECAST_LCD : THEME_LCD, to = dir ? THEME_LCD : THEME_FORECAST_LCD;
+  // os dois sentidos entre LCD retrô e Previsão LCD (as prévias da troca), o Mundo com cada um deles e o Mundo relógio
+  static const int8_t PAR[5][2] = {{THEME_LCD, THEME_FORECAST_LCD}, {THEME_FORECAST_LCD, THEME_LCD}, {THEME_LCD, THEME_WORLD}, {THEME_WORLD, THEME_FORECAST_LCD}, {THEME_WORLD, THEME_WORLD_WATCH}};
+  static const char *const NOME[5] = {"lcd_previsao-lcd", "previsao-lcd_lcd", "lcd_mundo", "mundo_previsao-lcd", "mundo_mundo-relogio"};
+  for (int dir = 0; dir < 5; dir++) {
+    int from = PAR[dir][0], to = PAR[dir][1];
     UiState sa = base(14, 58, 50), sb = sa;
     sa.theme = from;
     sb.theme = to;
@@ -293,11 +304,14 @@ static int checkLcdCurtain() {
       Frame q;
       memcpy(q.px, segmentos[k].data(), sizeof q.px);
       char n[64];
-      snprintf(n, sizeof n, "inc_segmentos_%s_%02zu", dir ? "previsao-lcd_lcd" : "lcd_previsao-lcd", k);
+      snprintf(n, sizeof n, "inc_segmentos_%s_%02zu", NOME[dir], k);
       save(q, n);
     }
     uiRenderClock(sb);  // quadro incremental depois da troca: nada muda
-    for (int i = 0; i < 240 * 240; i++) fails += f->px[i] != b->px[i] ? 1 : 0;
+    long depois = 0;
+    for (int i = 0; i < 240 * 240; i++) depois += f->px[i] != b->px[i];
+    if (depois) printf("segmentos %s -> %s: FALHOU no quadro seguinte à troca (%ld pixels diferentes)\n", uiFaceName(from), uiFaceName(to), depois);
+    fails += depois != 0;
   }
   delete f; delete a; delete b;
   return fails;
@@ -487,6 +501,74 @@ static int testSpriteLimits() {
   return fails;
 }
 
+// Mundo: custo da virada do minuto (o mapa inteiro é refeito) contra um segundo comum (só o ponto e os segundos)
+// e contra um desenho completo do LCD retrô, que já roda no aparelho sem travar o relógio. Tempo de CPU no PC.
+static void checkWorldCost() {
+  using clk = std::chrono::steady_clock;
+  auto us = [](clk::time_point t0) { return std::chrono::duration<double, std::micro>(clk::now() - t0).count(); };
+  Frame *f = new Frame();
+  const int N = 200;
+  double tMin = 0, tSec = 0, tLcd = 0;
+  for (int i = 0; i < N; i++) {
+    UiState s = base(14, 37, 58);
+    s.theme = THEME_WORLD;
+    uiBegin(f);
+    uiRenderClock(s);
+    s.now.tm_sec = 59;
+    auto t0 = clk::now();
+    uiRenderClock(s);
+    tSec += us(t0);
+    s.now.tm_sec = 0;
+    s.now.tm_min = 38;
+    t0 = clk::now();
+    uiRenderClock(s);
+    tMin += us(t0);
+    UiState l = base(14, 37, 58);
+    l.theme = THEME_LCD;
+    t0 = clk::now();
+    uiBegin(f);
+    uiRenderClock(l);
+    tLcd += us(t0);
+  }
+  printf("mundo: virada do minuto (mapa inteiro) %ld us, segundo comum %ld us, desenho completo do LCD retro %ld us (CPU no PC, media de %d)\n", (long)(tMin / N), (long)(tSec / N), (long)(tLcd / N), N);
+  delete f;
+}
+
+static int checkSetupQr() {
+  int fails = 0;
+  char payload[SETUP_WIFI_TEXT];
+  uint8_t qr[SETUP_QR_BYTES];
+  const char *ssid = "Small;TV:1", *pass = "ab\\cd,\"12";
+  bool valid = setupWifiPayload(payload, sizeof payload, ssid, pass);
+  fails += !valid || strcmp(payload, "WIFI:T:WPA;S:Small\\;TV\\:1;P:ab\\\\cd\\,\\\"12;;") != 0;
+  fails += !setupQrEncode(payload, qr);
+  char tiny[12];
+  fails += setupWifiPayload(tiny, sizeof tiny, ssid, pass) || tiny[0];
+  fails += setupWifiPayload(payload, sizeof payload, "", pass);
+  fails += setupWifiPayload(payload, sizeof payload, "SmallTV", "short");
+  char longSsid[34]; memset(longSsid, 's', sizeof longSsid); longSsid[33] = 0;
+  fails += setupWifiPayload(payload, sizeof payload, longSsid, pass);
+  memset(payload, 'X', sizeof payload - 1); payload[sizeof payload - 1] = 0;
+  fails += setupQrEncode(payload, qr);
+  const uint8_t lang = uiLang;
+  Frame *f = new Frame();
+  for (int l = 0; l < 3; l++) {
+    uiSetLang(l);
+    for (int r = 0; r < 2; r++) for (int c = 0; c < 2; c++) {
+      uiBegin(f);
+      uiWifiSetup(r ? "SmallTV-Recuperacao" : "SmallTV-Pomodoro", "AbCd2345", "192.168.4.1", c, r);
+      char name[48]; snprintf(name, sizeof name, "setup_%s_%s_%d", r ? "recovery" : "wifi", c ? "portal" : "connect", l);
+      save(*f, name);
+    }
+  }
+  uiBegin(f);
+  uiWifiSetup(ssid, pass, "192.168.4.1", false, false);
+  save(*f, "setup_escaped");
+  delete f;
+  uiSetLang(lang);
+  printf("QR de configuracao e recuperacao: %s (escape, limites e 3 idiomas)\n", fails ? "FALHOU" : "ok");
+  return fails;
+}
 #include "out/tint_test.inc"
 
 int main() {
@@ -525,6 +607,20 @@ int main() {
   { UiState t = base(2, 46, 0); t.theme = THEME_WORDS; shot("18_palavras_para", t, false); }
   { UiState t = base(11, 58, 0); t.theme = THEME_WORDS; shot("19_palavras_meiodia", t, false); }
   { UiState t = base(8, 23, 0); t.theme = THEME_WORDS; shot("20_palavras_manha", t, false); }
+  // Mundo: dia e noite em Florianópolis; o mesmo instante (17:37 UTC) em Tóquio e em Londres (12 h, com foco e chuva)
+  { UiState t = base(14, 37, 24); t.theme = THEME_WORLD; shot("21_mundo_dia", t, false); }
+  { UiState t = base(23, 10, 41); t.theme = THEME_WORLD; t.wx.rainIn = 0; shot("21b_mundo_noite", t, false); }
+  { UiState t = base(2, 37, 24); t.now.tm_yday = 293; t.now.tm_mday = 21; t.now.tm_wday = 3; t.theme = THEME_WORLD;
+    t.utcOff = 9 * 3600; t.lat10 = 357; t.lon10 = 1397; t.city = "Tokyo"; shot("21c_mundo_toquio", t, false); }
+  { UiState t = base(18, 37, 24); t.theme = THEME_WORLD; t.utcOff = 3600; t.lat10 = 515; t.lon10 = -1; t.city = "London"; t.hour12 = true;
+    t.running = true; t.wx.rainIn = 15; shot("21d_mundo_londres_12h", t, false); }
+  // Mundo relógio: os mesmos quatro cenários, com o nome da cidade (código FLO, TOK e LON)
+  { UiState t = base(14, 37, 24); t.theme = THEME_WORLD_WATCH; shot("22_mundo_relogio_dia", t, false); }
+  { UiState t = base(23, 10, 41); t.theme = THEME_WORLD_WATCH; t.wx.rainIn = 0; shot("22b_mundo_relogio_noite", t, false); }
+  { UiState t = base(2, 37, 24); t.now.tm_yday = 293; t.now.tm_mday = 21; t.now.tm_wday = 3; t.theme = THEME_WORLD_WATCH;
+    t.utcOff = 9 * 3600; t.lat10 = 357; t.lon10 = 1397; t.city = "Tokyo"; shot("22c_mundo_relogio_toquio", t, false); }
+  { UiState t = base(18, 37, 24); t.theme = THEME_WORLD_WATCH; t.utcOff = 3600; t.lat10 = 515; t.lon10 = -1; t.city = "London"; t.hour12 = true;
+    t.running = true; t.wx.rainIn = 15; shot("22d_mundo_relogio_londres_12h", t, false); }
 
   // ---- animação da virada do Flip: 14:37 -> 14:38 ----
   {
@@ -580,6 +676,7 @@ int main() {
 
   // ---- redesenho incremental ----
   int fails = 0;
+  fails += checkSetupQr();
   for (int t = 0; t < THEME_COUNT; t++) {
     UiState st = base(14, 58, 50);
     st.theme = t;
@@ -599,6 +696,7 @@ int main() {
   fails += checkTransitions(p);
   fails += checkSlide();
   fails += checkLcdCurtain();
+  checkWorldCost();
   fails += testPackages(p);
   fails += testSpriteLimits();
   fails += TintTest::run();

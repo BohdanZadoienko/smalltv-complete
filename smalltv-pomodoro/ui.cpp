@@ -11,6 +11,7 @@
 #include "assets.h"
 #include "ui_kit.h"
 #include "facepack.h"
+#include "setup_qr.h"
 
 Adafruit_GFX *G = nullptr;
 #include <math.h>
@@ -654,7 +655,7 @@ static bool slideTo(const UiState &s, uint8_t t) {
   return ok;  // false: quem chamou desenha o mostrador novo do jeito normal (tela cheia)
 }
 
-// ---------- troca LCD retrô <-> Previsão LCD: moldura parada, tinta com tempo de resposta ----------
+// ---------- troca entre os mostradores LCD (LCD retrô, Previsão LCD, Mundo, Mundo relógio): moldura parada, tinta com tempo de resposta ----------
 // Os dois mostradores têm a mesma moldura (retângulo arredondado verde-acinzentado e sombra interna); mudam
 // o miolo (x 10..229, y 28..207: os dígitos grandes do LCD retrô passam de x 14) e os rótulos de fora
 // (y < 24 e y >= 210), que nunca passam da moldura. Num LCD de verdade o segmento não acende nem apaga de
@@ -664,7 +665,7 @@ static bool slideTo(const UiState &s, uint8_t t) {
 // pronta (inkFade). Os rótulos brancos de fora deslizam para o lado: o antigo sai pela esquerda e o novo
 // entra pela direita. Nenhum pixel da moldura é redesenhado.
 void (*uiStepHook)() = nullptr;  // fim de cada quadro da troca (o simulador guarda os quadros)
-struct LcdCtx { SlideCtx s; const UiState *st; int16_t a, dxOld, dxNew; bool fcOld, fcNew; };
+struct LcdCtx { SlideCtx s; const UiState *st; int16_t a, dxOld, dxNew; uint8_t kOld, kNew; };
 // tinta (qualquer cor da faixa que não seja o preto de fora do vidro) a a/256 do caminho até o fundo do LCD
 static void inkFade(int a) {
   const uint16_t bg = uiRgb(166, 180, 140);
@@ -682,10 +683,11 @@ static void lcdFadeStrip(void *p) {
   slideStrip(&c->s);
   if (c->a < 256) inkFade(c->a);
 }
-static void lcdLabels(const UiState &s, bool fc, int dx) {
+static uint8_t lcdKind(int8_t t) { return t == THEME_FORECAST_LCD ? 1 : t == THEME_WORLD ? 2 : t == THEME_WORLD_WATCH ? 3 : 0; }  // índice do rótulo (lcdLabel)
+static void lcdLabels(const UiState &s, uint8_t kind, int dx) {
   const uint16_t gray = uiRgb(170, 170, 182);
-  textC(120 + dx, 9, 1, gray, lcdLabel(fc));
-  if (fc) {
+  textC(120 + dx, 9, 1, gray, lcdLabel(kind));
+  if (kind == 1) {
     textC(119 + dx, 216, 1, gray, "MAX");
     textC(161 + dx, 216, 1, gray, "MIN");
   } else textC(120 + dx, 220, 1, MUTED, s.ip ? s.ip : "");
@@ -693,17 +695,16 @@ static void lcdLabels(const UiState &s, bool fc, int dx) {
 static void lcdLabelStrip(void *p) {
   LcdCtx *c = (LcdCtx *)p;
   G->fillScreen(BG);
-  lcdLabels(*c->st, c->fcOld, c->dxOld);
-  lcdLabels(*c->st, c->fcNew, c->dxNew);
+  lcdLabels(*c->st, c->kOld, c->dxOld);
+  lcdLabels(*c->st, c->kNew, c->dxNew);
 }
-static bool lcdPair(int8_t a, int8_t b) {
-  return (a == THEME_LCD && b == THEME_FORECAST_LCD) || (a == THEME_FORECAST_LCD && b == THEME_LCD);
-}
+static bool isLcd(int8_t t) { return t == THEME_LCD || t == THEME_FORECAST_LCD || t == THEME_WORLD || t == THEME_WORLD_WATCH; }
+static bool lcdPair(int8_t a, int8_t b) { return a != b && isLcd(a) && isLcd(b); }
 static bool lcdFade(const UiState &s, uint8_t from, uint8_t t) {
   static const uint16_t AT[5] PROGMEM = {0, 90, 180, 270, 360};   // instante de cada quadro do miolo (ms)
   static const uint16_t INK[5] PROGMEM = {176, 88, 88, 176, 256};  // tinta (256 = tinta toda); os 2 primeiros são do mostrador antigo
   const int LS = 10, LMS = 45;  // rótulos: 10 passos de 45 ms
-  LcdCtx c = {{&s, from}, &s, 256, 0, 240, from == THEME_FORECAST_LCD, t == THEME_FORECAST_LCD};
+  LcdCtx c = {{&s, from}, &s, 256, 0, 240, lcdKind(from), lcdKind(t)};
   uint32_t t0 = slideNow();
   int me = 0, lk = 0;
   while (me < 5 || lk <= LS) {
@@ -729,7 +730,7 @@ static bool lcdFade(const UiState &s, uint8_t from, uint8_t t) {
 }
 
 void uiRenderClock(const UiState &s) {
-  notifyLcdView(s.theme == THEME_LCD || s.theme == THEME_FORECAST_LCD);
+  notifyLcdView(isLcd(s.theme));
   if (s.theme == THEME_PACK) {  // mostrador instalado como pacote (facepack.cpp)
     slideOn = false;
     bool full = enter(SCR_PACK);
@@ -847,6 +848,68 @@ void uiMessage(const char *title, const char *l1, const char *l2, const char *l3
   textC(120, 126, 2, WORK, l1);
   textC(120, 158, 1, MUTED, l2);
   textC(120, 172, 1, MUTED, l3);
+}
+
+// Identidade do Pomodoro: mascote, fonte em pixels, coral e cartões do mesmo kit dos mostradores.
+// A referência orienta a disposição: QR à esquerda, senha/instrução à direita.
+// QR com credenciais reais e margem branca de quatro módulos, sem texto ou ornamento sobre o código.
+void uiWifiSetup(const char *ssid, const char *pass, const char *ip, bool connected, bool recovery) {
+  uiScrollEnd();
+  screen = SCR_MSG;
+  bootLast = -1;
+  G->fillScreen(BG);
+  const uint16_t status = connected ? SHORT : WORK;
+  textC(120, 12, 1, recovery ? WORK : status, recovery ? tr("MODO DE RECUPERACAO", "RECOVERY MODE", "MODO DE RECUPERACION")
+      : connected ? tr("CELULAR CONECTADO", "PHONE CONNECTED", "CELULAR CONECTADO")
+      : tr("CONFIGURE O WI-FI", "SET UP WI-FI", "CONFIGURA EL WI-FI"));
+  mascot(50, 32, 2, FACE_HAPPY);
+  text(95, 32, 2, TEXT, "SmallTV");
+  text(95, 51, 2, WORK, "Pomodoro");
+  textC(120, 77, 1, MUTED, ip);
+  G->fillRoundRect(6, 92, 228, 132, 8, CARD);
+
+  char payload[SETUP_WIFI_TEXT];
+  bool ok;
+  if (connected) {
+    int n = snprintf(payload, sizeof payload, "http://%s/", ip);
+    ok = n > 0 && (size_t)n < sizeof payload;
+  } else ok = setupWifiPayload(payload, sizeof payload, ssid, pass);
+  uint8_t qr[SETUP_QR_BYTES];
+  ok = ok && setupQrEncode(payload, qr);
+  if (ok) {
+    const int box = 123, scale = 3, quiet = 4, modules = qrcodegen_getSize(qr);
+    int side = (modules + 2 * quiet) * scale, x0 = 10 + (box - side) / 2, y0 = 96 + (box - side) / 2;
+    G->fillRect(x0, y0, side, side, 0xFFFF);
+    for (int y = 0; y < modules; y++)
+      for (int x = 0; x < modules; x++)
+        if (qrcodegen_getModule(qr, x, y)) G->fillRect(x0 + (x + quiet) * scale, y0 + (y + quiet) * scale, scale, scale, 0);
+  } else {
+    textC(71, 140, 1, MUTED, tr("Use os dados", "Use the details", "Usa los datos"));
+    textC(71, 152, 1, MUTED, tr("ao lado", "on the right", "de al lado"));
+  }
+  text(141, 105, 1, MUTED, tr("ETAPA", "STEP", "PASO"));
+  text(177, 105, 1, status, connected ? "2/2" : "1/2");
+  if (connected) {
+    if (recovery) {  // a recuperação não tem portal cativo (sem DNS): o QR é o caminho
+      text(141, 125, 1, TEXT, tr("Escaneie o QR", "Scan this QR", "Escanea el QR"));
+      text(141, 137, 1, TEXT, tr("para abrir", "to open", "para abrir"));
+      text(141, 149, 1, TEXT, tr("o painel", "the panel", "el panel"));
+    } else {
+      text(141, 125, 1, TEXT, tr("Se o portal", "If the portal", "Si el portal"));
+      text(141, 137, 1, TEXT, tr("nao abrir,", "stays closed,", "no se abre,"));
+      text(141, 149, 1, TEXT, tr("escaneie o QR", "scan this QR", "escanea el QR"));
+    }
+    text(141, 176, 2, TEXT, tr("Abrir", "Open", "Abrir"));
+    text(141, 195, 2, TEXT, tr("painel", "panel", "panel"));
+    textC(120, 230, 1, MUTED, recovery ? tr("Envie o firmware pelo painel", "Upload firmware in the panel", "Envia firmware desde el panel")
+        : tr("Escolha o Wi-Fi de casa", "Choose your home Wi-Fi", "Elige tu Wi-Fi de casa"));
+  } else {
+    text(141, 125, 1, TEXT, tr("Escaneie para", "Scan to join", "Escanea para"));
+    text(141, 137, 1, TEXT, tr("conectar", "this network", "conectarte"));
+    text(141, 165, 1, MUTED, tr("Senha Wi-Fi", "Wi-Fi password", "Clave Wi-Fi"));
+    text(136, 184, strlen(pass) <= 8 ? 2 : 1, TEXT, pass);
+    textC(120, 230, 1, MUTED, ssid);
+  }
 }
 
 // Troca só a linha de destaque da mensagem na tela (ex.: "Iniciando" -> "Conectando Wi-Fi"), sem redesenhar o resto

@@ -48,7 +48,7 @@ extern "C" uint32_t _FS_start;
 
 void blit(int16_t x, int16_t y, uint16_t *px, int16_t w, int16_t h);  // ui.cpp: recorta para a área suja; fora da tela, cai na faixa
 
-#define FW_VERSION "1.24.5"
+#define FW_VERSION "1.24.9"
 #define HOSTNAME   "smalltv"
 #define AP_NAME    "SmallTV-Pomodoro"
 
@@ -147,7 +147,7 @@ struct Settings {
   uint8_t beta;         // 1 = o painel oferece também as versões de teste (firmware/beta.json); lixo vira 0
   uint8_t spi80;        // reservado: era a opção de 80 MHz de um teste (o ST7789 não aguenta e a imagem vira lixo); sempre 0
   uint8_t warm;         // cor quente à noite: 0 = desligada, 1..100 = quanto do azul sai (gama digital do ST7789V); lixo vira 0
-  uint8_t lcdGreen;     // 1 = tom verde de LCD antigo nos mostradores LCD retrô e Previsão LCD (warm.h); lixo vira 1
+  uint8_t lcdGreen;     // 1 = tom verde de LCD antigo nos mostradores LCD retrô, Previsão LCD, Mundo e Mundo relógio (warm.h); lixo vira 1
 };
 const uint32_t SETTINGS_MAGIC = 0x504F4D34;     // "POM4"
 const uint32_t SETTINGS_MAGIC_V3 = 0x504F4D33;  // "POM3": mesmos campos, sem os do v4
@@ -575,25 +575,28 @@ void command(const String &c) {
 // Nome na rede, sem decorar o IP:
 //  - lanName: http://smalltv.local; com outro relógio já usando, smalltv-2.local, -3... (conferido ao conectar)
 //  - netName: "smalltv-" + 4 hex do chip, sempre válido como reserva e usado no DHCP.
-// Só o registro A, com o leitor de pacotes de security.h (testado): o ESP8266mDNS custaria ~21 KB.
+// Só os registros A e AAAA, com o leitor de pacotes de security.h (testado): o ESP8266mDNS custaria ~21 KB.
 char netName[16], lanName[12];
 WiFiUDP hueUdp;
 WiFiUDP mdnsUdp;
 IPAddress mdnsIp;
 
-void mdnsSend(const char *name, uint16_t id, bool legacy, bool direct) {
-  uint8_t out[80], ip[4] = {mdnsIp[0], mdnsIp[1], mdnsIp[2], mdnsIp[3]};
-  size_t m = mdnsAnswer(out, sizeof out, name, ip, id, legacy);
+enum MdnsTo : uint8_t { MDNS_GROUP, MDNS_DIRECT, MDNS_BROADCAST };  // multicast, quem perguntou, broadcast da sub-rede
+
+void mdnsSend(const char *name, uint16_t id, bool legacy, MdnsTo to, uint8_t want = MDNS_A) {
+  uint8_t out[96], ip[4] = {mdnsIp[0], mdnsIp[1], mdnsIp[2], mdnsIp[3]};
+  size_t m = mdnsAnswer(out, sizeof out, name, ip, id, legacy, want);
   if (!m) return;
-  if (direct) mdnsUdp.beginPacket(mdnsUdp.remoteIP(), mdnsUdp.remotePort());
+  if (to == MDNS_DIRECT) mdnsUdp.beginPacket(mdnsUdp.remoteIP(), mdnsUdp.remotePort());
+  else if (to == MDNS_BROADCAST) mdnsUdp.beginPacket(IPAddress((uint32_t)mdnsIp | ~(uint32_t)WiFi.subnetMask()), 5353);
   else mdnsUdp.beginPacketMulticast(IPAddress(224, 0, 0, 251), 5353, mdnsIp);
   mdnsUdp.write(out, m);
   mdnsUdp.endPacket();
 }
 
 void mdnsAnnounce() {
-  if (lanName[0]) mdnsSend(lanName, 0, false, false);
-  mdnsSend(netName, 0, false, false);
+  if (lanName[0]) mdnsSend(lanName, 0, false, MDNS_GROUP);
+  mdnsSend(netName, 0, false, MDNS_GROUP);
 }
 
 bool mdnsJoin() {
@@ -655,14 +658,25 @@ void mdnsLoop() {
   uint8_t b[256];  // a pergunta vem no começo; o resto (respostas conhecidas) pode ficar de fora
   int n = mdnsUdp.read(b, sizeof b);
   if (n <= 0) return;
-  bool legacy = mdnsUdp.remotePort() != 5353, qu = false;
+  bool legacy = mdnsUdp.remotePort() != 5353;
   uint16_t id = (uint16_t)(b[0] << 8 | b[1]);
-  const char *name = lanName[0] && mdnsAsksFor(b, n, lanName, &qu) ? lanName : mdnsAsksFor(b, n, netName, &qu) ? netName : nullptr;
+  uint8_t want = lanName[0] ? mdnsAsksFor(b, n, lanName, nullptr) : 0;
+  const char *name = want ? lanName : (want = mdnsAsksFor(b, n, netName, nullptr)) ? netName : nullptr;
   if (!name) return;
-  mdnsSend(name, id, legacy, legacy || qu);
-  // Pergunta comum (resposta por multicast): manda também uma cópia direta para quem perguntou. Há roteadores que
-  // não repassam multicast entre aparelhos do Wi-Fi; Windows, macOS e Android aceitam a resposta direta.
-  if (!legacy && !qu) mdnsSend(name, id, false, true);
+  if (legacy) {  // resolvedor comum: só ele espera a resposta
+    mdnsSend(name, id, true, MDNS_DIRECT, want);
+    return;
+  }
+  // Por multicast mesmo quando pediram resposta direta (bit QU; a RFC 6762, 5.4, permite): no Windows vários programas
+  // escutam a porta 5353 (Chrome, Edge...) e a resposta direta pode cair num deles em vez do resolvedor, que então
+  // espera ~2,8 s. E uma cópia direta para quem perguntou: há roteadores que não repassam multicast no Wi-Fi.
+  mdnsSend(name, id, false, MDNS_GROUP, want);
+  mdnsSend(name, id, false, MDNS_DIRECT, want);
+  // E por broadcast da sub-rede: roteador com 2,4 e 5 GHz na mesma rede pode não levar o multicast do relógio (2,4 GHz)
+  // até o PC no 5 GHz, e a cópia direta cai num dos programas da porta 5353. O resolvedor do Windows aceita a resposta
+  // por broadcast (medido). No máximo 4 por segundo: uma busca do Windows faz 12 perguntas em ~0,9 s.
+  static RateLimit bcastLimit;
+  if (bcastLimit.take(millis(), 4)) mdnsSend(name, id, false, MDNS_BROADCAST, want);
 }
 bool alexaUp = false;     // ouvindo a descoberta
 uint8_t alexaBri = 255;   // último brilho pedido (1-255)
@@ -1159,6 +1173,7 @@ String hhmm(const struct tm &t) {
 }
 
 char ipText[16];
+int32_t localOffset();  // hora local - UTC agora, em segundos (mais abaixo)
 
 UiState makeState() {
   UiState s;
@@ -1191,6 +1206,10 @@ UiState makeState() {
     }
   }
   s.city = cfg.city;
+  s.utcOff = localOffset();
+  s.lat10 = (int16_t)lroundf(cfg.lat * 10);
+  s.lon10 = (int16_t)lroundf(cfg.lon * 10);
+  s.hasLoc = cfg.city[0];
   s.theme = previewActive() ? previewTheme : cfg.theme;
   s.accent = clockColor();
   strlcpy(ipText, WiFi.localIP().toString().c_str(), sizeof ipText);
@@ -3167,12 +3186,29 @@ void setupUpdate() {
 
 // ---------- modo de recuperação ----------
 #define RECOVERY_AP "SmallTV-Recuperacao"
+// Só redesenha ao mudar de etapa: o QR fica estável para a câmera, sem animação nem piscada.
+int8_t setupQrShown = -1;
+void setupQrScreen(bool recovery) {
+  bool connected = WiFi.softAPgetStationNum() > 0;
+  if (setupQrShown == (int8_t)connected) return;
+  setupQrShown = connected;
+  lcdViewActive = false;  // QR exige gama neutro; não reaplica a cor quente entre as duas etapas
+  // QR em preto/branco, mesmo se o tema salvo for um LCD verde ou estiver com cor quente à noite.
+  // Os laços de configuração/recuperação não reaplicam o gama; o reinício retoma os ajustes salvos.
+  if (tftReady && warmSent != 0) {
+    warmApplyState([](uint8_t c, uint8_t *d, uint8_t n) { tft.sendCommand(c, d, n); }, 0);
+    warmSent = 0;
+  }
+  String ip = WiFi.softAPIP().toString();
+  uiWifiSetup(recovery ? RECOVERY_AP : AP_NAME, cfg.apPass, ip.c_str(), connected, recovery);
+}
+
 void startRecovery() {
   newFormToken();
   WiFi.mode(WIFI_AP);
   WiFi.softAP(RECOVERY_AP, cfg.apPass);
-  String pw = String(tr("senha: ", "password: ", "clave: ")) + cfg.apPass;
-  message(tr("Modo de recuperacao", "Recovery mode", "Modo de recuperacion"), RECOVERY_AP, pw.c_str(), "http://192.168.4.1");
+  setupQrShown = -1;
+  setupQrScreen(true);
   server.on("/", HTTP_GET, [] {
     String p = F("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>SmallTV</title>"
                  "<style>body{font:16px system-ui;background:#111;color:#eee;max-width:420px;margin:auto;padding:20px}"
@@ -3489,8 +3525,8 @@ void startPortal() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(AP_NAME, cfg.apPass);
   dns.start(53, "*", WiFi.softAPIP());
-  String pw = String(tr("senha: ", "password: ", "clave: ")) + cfg.apPass;
-  message(tr("Configure o Wi-Fi", "Set up Wi-Fi", "Configura el Wi-Fi"), AP_NAME, pw.c_str(), "http://192.168.4.1");
+  setupQrShown = -1;
+  setupQrScreen(false);
   server.on("/", HTTP_GET, [] {
     int n = WiFi.scanNetworks();
     String opts;
@@ -3630,11 +3666,13 @@ void loop() {
   if (bootCount && millis() > 30000) setBootCount(0);  // ficou ligado: não foi uma inicialização curta
   if (recoveryMode) {
     server.handleClient();
+    setupQrScreen(true);
     return;
   }
   if (portalMode) {
     dns.processNextRequest();
     server.handleClient();
+    setupQrScreen(false);
     // sem configuração em 5 min (ex.: roteador estava desligado): reinicia e tenta a rede salva de novo
     if (millis() > 300000) safeRestart();
     return;
