@@ -17,6 +17,8 @@ int main(){
  const char *bad="\xe0\x80\x80";assert(utf8Character(bad)=='?');
  const char *shortUtf="\xf0\x9f";assert(utf8Character(shortUtf)=='?');
  const char *nul="\xc3";assert(utf8Character(nul)=='?');
+ assert(usageDisplayPercent(0,true)==100);assert(usageDisplayPercent(100,true)==0);
+ assert(usageDisplayPercent(25,true)==75);assert(usageDisplayPercent(25,false)==25);assert(usageDisplayPercent(-1,true)==-1);
  ScreenPlaylist list;list.count=3;list.screens[0]=0;list.screens[1]=13;list.screens[2]=200;list.delaySeconds=5;list.rotate=true;
  assert(list.active(4999)==0);assert(list.active(5000)==13);assert(list.active(10000)==200);assert(list.active(15000)==0);
  assert(list.active(35000)==13);list.rotate=false;assert(list.active(40000)==0);
@@ -34,6 +36,9 @@ int main(){
  deserializeJson(display,"{\"rotate\":true,\"delay\":5,\"parts\":15,\"albumAuto\":false,\"screens\":[13,14,15,16,200]}");
  ScreenPlaylist config;assert(parseDisplayPayload(display.as<JsonVariantConst>(),config,17,123));
  assert(config.count==5&&config.changedAt==123&&config.screens[4]==200&&!config.albumAuto);
+ assert(!config.usageRemaining);display["remaining"]=true;
+ assert(parseDisplayPayload(display.as<JsonVariantConst>(),config,17,123)&&config.usageRemaining);
+ display["remaining"]="true";assert(!parseDisplayPayload(display.as<JsonVariantConst>(),config,17,999));
  auto saved=config;
  for(const char *invalid:{"{}","{\"rotate\":true,\"delay\":4,\"parts\":15,\"albumAuto\":true,\"screens\":[0]}","{\"rotate\":true,\"delay\":15,\"parts\":0,\"albumAuto\":true,\"screens\":[0]}","{\"rotate\":true,\"delay\":15,\"parts\":15,\"albumAuto\":true,\"screens\":[17]}","{\"rotate\":true,\"delay\":15,\"parts\":15,\"albumAuto\":true,\"screens\":[0,0]}","{\"rotate\":true,\"delay\":15,\"parts\":15,\"albumAuto\":true,\"screens\":[]}"}){
   deserializeJson(display,invalid);assert(!parseDisplayPayload(display.as<JsonVariantConst>(),config,17,999));

@@ -4,14 +4,20 @@ Open-source firmware for the **GeekMagic SmallTV Ultra (ESP8266, 4 MB, 240 × 24
 
 This is a functional replacement for the original GeekMagic feature categories. GeekMagic has not provided its firmware source: this project does not merge or reproduce its proprietary binary, exact artwork, cloud services, or every vendor setting.
 
-**Status: 2.0.0 development build.** The firmware compiles and passes host tests. This custom build has not yet been flashed or tested on a physical device. The Mac companion is already working with smalltv-ultra-mod 1.0.2. Do not treat simulated previews as hardware verification.
+**Status: 2.0.1 development preview.** The previous 2.0.0 build is installed and tested on one SmallTV Ultra; the new Settings integration and remaining-limit mode are built and host-tested, awaiting installation approval. Verified Wi-Fi migration from smalltv-ultra-mod 1.0.2, real Claude/Codex pushes, current weather, individual/combined screens, timed rotation, and JPEG/GIF album playback. Tests are limited to this unit; recovery mode and every panel feature have not been exercised on hardware. See [validation details](docs/VALIDATION.md).
 
 <img src="docs/complete/face-15.png" width="240" alt="Simulated combined dashboard"> <img src="docs/complete/face-16.png" width="240" alt="Simulated classic weather clock">
 
 *Simulator previews with example usage data.*
 
+<img src="docs/complete/remaining-15.png" width="240" alt="Remaining capacity mode">
+
+[Categorized Settings preview](docs/complete/settings-categories.png) · [Phone controls preview](docs/complete/settings-phone.png)
+
 ## Choose what the clock displays
 
+- **Integrated Settings:** category submenus use the existing panel design. Open **Settings → Display & screens** for all display controls; `/display` redirects to that same submenu.
+- **Used or remaining limits:** the saved switch applies to both providers and all AI faces. Reset countdowns are unchanged; near-exhausted capacity still turns red. The usage API always accepts percentages used.
 - **Combined dashboard:** independently show or hide the clock, weather, Claude and Codex meters.
 - **One fixed screen:** choose any built-in face, either usage provider, the combined dashboard, or the photo/GIF album.
 - **Timed rotation:** tick the screens to cycle through, with a delay of 5–3600 seconds.
@@ -19,7 +25,7 @@ This is a functional replacement for the original GeekMagic feature categories. 
 - **Classic weather clock:** time, date, city, temperature, humidity and daily low/high, plus an uploaded GIF up to 80 × 80 pixels.
 - **German characters:** UTF-8 `Ä Ö Ü ä ö ü ß`, including decomposed umlauts, work in the common bitmap text and vector-font fallback. This adds glyph support; it does not translate the interface into German. Unsupported characters use `?`.
 
-The 13 existing upstream clock/forecast/world faces remain available, alongside the three AI faces and Classic weather clock. Pomodoro timers, brightness scheduling, optional panel password, downloaded faces and the upstream recovery mode remain available. A running focus timer takes priority. Selecting a face in the original gallery switches back to its controls; saving **Screens and AI limits** reactivates the new display controls. The new rotation list contains built-in faces and the album; downloaded-face rotation uses the upstream controls.
+The 13 existing upstream clock/forecast/world faces remain available, alongside the three AI faces and Classic weather clock. Pomodoro timers, brightness scheduling, optional panel password, downloaded faces and the upstream recovery mode remain available. A running focus timer takes priority. Selecting a face in the original gallery switches back to its controls; saving **Settings → Display & screens** reactivates the new display controls. The new rotation list contains built-in faces and the album; downloaded-face rotation uses the upstream controls.
 
 The main panel and its English translations are embedded in the firmware. Optional online face previews/catalogue, city search and weather still require internet access. Automatic upstream firmware update checks are disabled so this fork cannot accidentally install upstream firmware signed by another key.
 
@@ -65,7 +71,7 @@ Node.js, a C++17 compiler and Python are required. Firmware dependencies are pin
 
 Only use this build on the **SmallTV Ultra ESP8266**, never an ESP32 SmallTV Pro or another model. Preserve existing files and Wi-Fi settings before changing firmware whenever possible. A public vendor firmware download is a recovery image, not a backup of a device's settings, photos, credentials or exact installed build.
 
-This build uses **4M1M** (LittleFS starts at `0x300000`), matching smalltv-ultra-mod's ESP8266 layout. It does not autoformat that storage. First boot can import Wi-Fi, brightness and timezone from that fork's `/config.json`. This migration has been source-reviewed but still requires hardware testing. It does not migrate the original GeekMagic binary's file layout. Do not upload a filesystem image or use an upstream 4M2M build by accident.
+This build uses **4M1M** (LittleFS starts at `0x300000`), matching smalltv-ultra-mod's ESP8266 layout. It does not autoformat that storage. First boot can import Wi-Fi, brightness and timezone from that fork's `/config.json`. This migration was verified from smalltv-ultra-mod 1.0.2 on one device. It does not migrate the original GeekMagic binary's file layout. Do not upload a filesystem image or use an upstream 4M2M build by accident.
 
 From a working compatible unsigned updater, install only after reviewing the model, firmware hash, recovery path and risk of losing access. Later normal updates require the matching separate `.sig` file. Uploading new firmware is an explicit manual action; the Mac companion never flashes anything.
 

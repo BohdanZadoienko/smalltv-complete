@@ -51,7 +51,7 @@ extern "C" uint32_t _FS_start;
 
 void blit(int16_t x, int16_t y, uint16_t *px, int16_t w, int16_t h);  // ui.cpp: recorta para a área suja; fora da tela, cai na faixa
 
-#define FW_VERSION "2.0.0"
+#define FW_VERSION "2.0.1"
 #define HOSTNAME   "smalltv"
 #define AP_NAME    "SmallTV-Pomodoro"
 
@@ -1198,6 +1198,7 @@ UiState makeState() {
   s.claude = usageClaude.view(millis());
   s.codex = usageCodex.view(millis());
   s.dashboardParts = displayPlaylist.dashboardParts;
+  s.usageRemaining = displayPlaylist.usageRemaining;
   s.weatherGif = completeWeatherGifActive;
   s.timeOk = localNow(s.now);
   s.hour12 = cfg.hour12;

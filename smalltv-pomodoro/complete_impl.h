@@ -9,6 +9,7 @@ static uint32_t completeAlbumAt=0;
 
 static void completePlaylistJson(JsonDocument &doc) {
   doc["rotate"]=displayPlaylist.rotate;doc["delay"]=displayPlaylist.delaySeconds;
+  doc["remaining"]=displayPlaylist.usageRemaining;
   doc["parts"]=displayPlaylist.dashboardParts;doc["albumAuto"]=displayPlaylist.albumAuto;
   doc["photo"]=completeSelectedPhoto;doc["weatherGif"]=completeWeatherGif;
   doc["enabled"]=displayPlaylistEnabled;doc["active"]=completeScreen;
@@ -135,8 +136,9 @@ static void completeReceiveUsage(UsageReading &reading) {
 void completeWeb() {
   server.on("/display",HTTP_GET,[]{
     if(!readOk())return;
-    server.sendHeader("Content-Encoding","gzip");server.sendHeader("Cache-Control","no-cache");
-    server.send_P(200,"text/html",(const char*)COMPLETE_DISPLAY_GZ,sizeof COMPLETE_DISPLAY_GZ);
+    server.sendHeader("Location","/#settings/screens");
+    server.sendHeader("Cache-Control","no-cache");
+    server.send(302,"text/plain","Open Settings > Display & screens");
   });
   server.on("/api/display",HTTP_GET,[]{
     if(!readOk())return;

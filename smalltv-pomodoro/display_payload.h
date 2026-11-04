@@ -6,6 +6,8 @@ inline bool parseDisplayPayload(JsonVariantConst root, ScreenPlaylist &result, u
   ScreenPlaylist next;
   if (!root.is<JsonObjectConst>() || !root["rotate"].is<bool>() || !root["delay"].is<int>() ||
       !root["parts"].is<int>() || !root["albumAuto"].is<bool>() || !root["screens"].is<JsonArrayConst>()) return false;
+  if(!root["remaining"].isNull()&&!root["remaining"].is<bool>())return false;
+  next.usageRemaining=root["remaining"]|false;
   int delay=root["delay"],parts=root["parts"];
   JsonArrayConst screens=root["screens"];
   if (delay<5 || delay>3600 || parts<1 || parts>15 || !screens.size() || screens.size()>ScreenPlaylist::MAX) return false;

@@ -372,6 +372,7 @@ static int checkIncremental(const char *name, UiState s, bool pomo) {
       if (s.theme == THEME_PACK) s.ms += 100;  // sprites animados dos pacotes andam com o relógio em ms
       if (++s.now.tm_sec >= 60) { s.now.tm_sec = 0; if (++s.now.tm_min >= 60) { s.now.tm_min = 0; s.now.tm_hour = (s.now.tm_hour + 1) % 24; } }
       if (step == 50) { s.wx.t = 9.6f; s.wx.code = 63; s.wx.tmin = 7; s.wx.tmax = 12; s.wx.version++; }
+      if (step == 60 && s.theme >= THEME_CLAUDE && s.theme <= THEME_AI_DASHBOARD) s.usageRemaining=!s.usageRemaining;
       if (step == 80) s.today++;
       if (step == 110) { s.weatherOn = false; }
       if (step == 125) s.today = s.dailyGoal;      // meta batida: tomate comemorando
@@ -694,6 +695,11 @@ int main() {
     }
     slug[k] = 0;
     fails += checkIncremental(slug, st, false) != 0;
+  }
+  for(int t=THEME_CLAUDE;t<=THEME_AI_DASHBOARD;++t){
+    UiState remaining=base(14,37,0);remaining.theme=t;remaining.usageRemaining=true;
+    char name[32];snprintf(name,sizeof name,"remaining-%d",t);shot(name,remaining,false);
+    fails+=checkIncremental(name,remaining,false)!=0;
   }
   fails += checkIncremental("pomodoro", p, true) != 0;
   fails += checkTransitions(p);

@@ -43,6 +43,7 @@ struct UiWeather {
 struct UiState {
   UiUsage claude, codex;
   uint8_t dashboardParts;
+  bool usageRemaining;
   bool weatherGif;
   bool timeOk;
   struct tm now;

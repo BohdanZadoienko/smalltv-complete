@@ -1,0 +1,53 @@
+<div class="settings-home" id="settingsHome">
+ <h1>Settings</h1><p class="settings-intro">Choose a category to customize your clock.</p>
+ <div class="settings-menu" id="settingsMenu"></div>
+ <p class="settings-footnote">Changes to general settings save automatically. Display selections have their own Save button.</p>
+</div>
+<div class="settings-detail" id="settingsDetail" hidden>
+ <button class="settings-back" type="button" onclick="settingsBack()">← All settings</button>
+ <h1 id="settingsTitle"></h1><p id="settingsDescription" class="settings-intro"></p>
+ <div id="settingsPanels">
+ <div class="grp" data-category="screens" hidden>
+ <form id="displayForm"><fieldset id="displayFields" disabled>
+  <h2>Screen selection</h2><div class="card">
+   <label>Display mode<select id="displayPolicy"><option value="fixed">One fixed screen</option><option value="rotate">Rotate screens</option></select></label>
+   <label id="displayFixedRow">Screen<select id="displayFixed"></select></label>
+   <div id="displayRotationRow" hidden><label>Seconds per screen<input id="displayDelay" type="number" min="5" max="3600" value="15" required></label><small>Choose the screens to rotate, in the order below.</small><div class="display-screen-list" id="displayScreens"></div></div>
+   <label>Advance photos and GIFs<input id="displayAlbumAuto" type="checkbox"></label>
+   <small>To hold one photo, turn off album advance, then choose Photos → Show now. A running focus timer takes priority.</small>
+  </div>
+  <h2>AI usage limits</h2><div class="card">
+   <label><span>Show remaining limits<small class="field-help">Off: capacity used. On: capacity left.</small></span><input id="displayRemaining" type="checkbox"></label>
+   <small>Applies to Claude Code and Codex, on their individual screens and the combined dashboard. Reset countdowns stay the same.</small>
+   <div class="display-meters"><div><b>Claude Code</b><p id="displayClaude">Waiting for usage…</p></div><div><b>OpenAI Codex</b><p id="displayCodex">Waiting for usage…</p></div></div>
+   <small id="displayMetricLabel">Percentages show capacity used.</small>
+  </div>
+  <h2>Combined dashboard</h2><div class="card">
+   <small>Choose what appears together on the combined screen.</small>
+   <div class="display-parts" id="displayParts">
+    <label>Clock<input type="checkbox" value="1"></label><label>Weather<input type="checkbox" value="2"></label>
+    <label>Claude Code<input type="checkbox" value="4"></label><label>OpenAI Codex<input type="checkbox" value="8"></label>
+   </div>
+   <small>Set your city under Settings → Weather & location.</small>
+  </div>
+  <h2>Classic weather-clock animation</h2><div class="card">
+   <label>Weather animation<select id="displayWeatherGif"><option value="">Weather icon</option></select></label>
+   <small>Upload a GIF in Photos first. This window accepts up to 80 × 80 pixels; the full-screen album accepts up to 240 × 240.</small>
+  </div>
+ </fieldset><button class="btn p" id="displaySave" type="submit" disabled>Save display settings</button>
+  <p id="displayMessage" class="display-message" role="status"></p>
+ </form>
+ <h2>Appearance and album timing</h2><div class="card">
+  <label>Digit color<input data-k="color" type="color"></label>
+  <label>12-hour format<input data-k="h12" type="checkbox"></label>
+  <label>Seconds per photo<input data-k="delay" type="number" min="3" max="255"></label>
+  <small>Text supports Ä Ö Ü ä ö ü ß, including city names such as München and Düsseldorf.</small>
+ </div>
+ <details class="card display-advanced"><summary>Downloaded-face rotation</summary>
+  <label>Rotate downloaded faces<select data-k="rotmin"><option value="0">Never</option><option value="1">Every minute</option><option value="5">Every 5 minutes</option><option value="15">Every 15 minutes</option><option value="30">Every 30 minutes</option><option value="60">Every hour</option></select></label>
+  <small id="rotinfo"></small><p><small>These gallery controls apply when a face is selected in Clock. Save display settings above to use the built-in screen rotation instead.</small></p>
+ </details>
+ </div>
+ {{UPSTREAM_GROUPS}}
+ </div>
+</div>

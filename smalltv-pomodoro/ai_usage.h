@@ -1,6 +1,8 @@
 #pragma once
 #include <stdint.h>
 
+inline int usageDisplayPercent(int used,bool remaining){return used<0?used:remaining?100-used:used;}
+
 struct UiUsage {
   bool valid;
   int16_t session, weekly;
@@ -34,7 +36,7 @@ struct ScreenPlaylist {
   static constexpr unsigned MAX = 24;
   uint8_t screens[MAX] = {15};
   uint8_t count = 1, cursor = 0;
-  bool rotate = false, albumAuto = true;
+  bool rotate = false, albumAuto = true, usageRemaining = false;
   uint16_t delaySeconds = 15;
   uint8_t dashboardParts = 15; // clock, weather, Claude, Codex
   uint32_t changedAt = 0;
