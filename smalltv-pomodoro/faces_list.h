@@ -18,4 +18,8 @@
   X(FORECAST, themeForecast, "Previsão", "Hoje e os próximos 4 dias, com chuva e mín/máx") \
   X(FORECAST_CARDS, themeForecastCards, "Previsão em cartões", "Quatro dias em cartões, com a máxima em destaque") \
   X(FORECAST_LCD, themeForecastLcd, "Previsão LCD", "Quatro dias no visor do LCD retrô") \
-  X(WORLD, themeWorld, "Mundo", "Mapa-múndi com a faixa de dia e noite e o ponto do seu local")   X(WORLD_WATCH, themeWorldWatch, "Mundo relógio", "Relógio de pulso com mapa, código da cidade e fuso")
+  X(WORLD, themeWorld, "Mundo", "Mapa-múndi com a faixa de dia e noite e o ponto do seu local")   X(WORLD_WATCH, themeWorldWatch, "Mundo relógio", "Relógio de pulso com mapa, código da cidade e fuso") \
+  X(CLAUDE, themeClaude, "Claude Code", "Claude 5-hour and weekly usage limits") \
+  X(CODEX, themeCodex, "OpenAI Codex", "Codex 5-hour and weekly usage limits") \
+  X(AI_DASHBOARD, themeAiDashboard, "Combined dashboard", "Clock, weather, Claude and Codex on one screen") \
+  X(CLASSIC, themeClassic, "Classic weather clock", "Time, weather and your own 80x80 GIF")

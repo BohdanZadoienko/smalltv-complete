@@ -1,3 +1,4 @@
+#include "utf8_text.h"
 // Fontes vetoriais suavizadas para os pacotes de mostrador (só dígitos, ':' e espaço).
 // Contornos com as curvas convertidas em segmentos, gerados a partir dos TTF; célula de 720
 // unidades de altura (do topo dos dígitos à linha de base), y para baixo.
@@ -469,6 +470,7 @@ static int vfAdv(const VecFont &f, char ch, int h) {
 }
 
 int vecWidth(const VecFont &f, const char *s, int h) {
+  if (utf8HasUnicode(s)) return textW(s, h / 8 > 0 ? h / 8 : 1);
   int w = 0;
   for (; *s; s++) w += vfAdv(f, *s, h);
   return w;
@@ -489,6 +491,7 @@ static void vfSpan(uint8_t *cov, int n, int a, int b) {
 }
 
 void vecText(const VecFont &f, int x, int y, int h, const char *s, uint16_t fg, uint16_t bg) {
+  if (utf8HasUnicode(s)) { text(x,y,h / 8 > 0 ? h / 8 : 1,fg,s); return; }
   int W = vecWidth(f, s, h);
   if (W > 240) W = 240;
   if (W <= 0 || h <= 0) return;

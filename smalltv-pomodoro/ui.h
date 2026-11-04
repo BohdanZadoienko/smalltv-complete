@@ -8,6 +8,7 @@
 
 // Mostradores: a lista fica em faces_list.h (o enum THEME_* é gerado a partir dela).
 #include "faces_list.h"
+#include "ai_usage.h"
 enum UiTheme : uint8_t {
 #define X(id, fn, name, desc) THEME_##id,
   UI_FACES(X)
@@ -40,6 +41,9 @@ struct UiWeather {
 };
 
 struct UiState {
+  UiUsage claude, codex;
+  uint8_t dashboardParts;
+  bool weatherGif;
   bool timeOk;
   struct tm now;
   bool hour12;

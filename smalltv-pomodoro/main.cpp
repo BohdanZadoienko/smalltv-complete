@@ -44,11 +44,14 @@ extern "C" uint32_t _FS_start;
 #include <coredecls.h>  // settimeofday_cb: avisa quando o SNTP muda a hora
 #include "ui.h"
 #include "web.h"
+#include "complete_panel.h"
+#include "ai_usage.h"
+#include "utf8_text.h"
 #include "facepack.h"
 
 void blit(int16_t x, int16_t y, uint16_t *px, int16_t w, int16_t h);  // ui.cpp: recorta para a área suja; fora da tela, cai na faixa
 
-#define FW_VERSION "1.24.9"
+#define FW_VERSION "2.0.0"
 #define HOSTNAME   "smalltv"
 #define AP_NAME    "SmallTV-Pomodoro"
 
@@ -152,10 +155,24 @@ struct Settings {
 const uint32_t SETTINGS_MAGIC = 0x504F4D34;     // "POM4"
 const uint32_t SETTINGS_MAGIC_V3 = 0x504F4D33;  // "POM3": mesmos campos, sem os do v4
 Settings cfg;
+UsageReading usageClaude, usageCodex;
+ScreenPlaylist displayPlaylist;
+bool displayPlaylistEnabled = true;
+void completeBegin();
+void completeWeb();
+bool completeScheduleView();
+void completeMigrateNetwork();
+bool completeShowEmptyAlbum();
+String completeSelectedPhoto, completeWeatherGif;
+bool completeWeatherGifActive=false, completeWeatherGifFailed=false;
 
 void defaultSettings() {
   cfg = Settings{SETTINGS_MAGIC, 25, 5, 15, 4, 80, 0, 0, "<-03>3", "", 0, -1,
                  THEME_MATRIX, 0, 10, 0, 22, 7, 15, 1, 242, 242, 242, 0, 0, "", 0, 1, 0, 8, ACT_READ, "", 0, 0, 0, 1, "", UI_VCOM_DEFAULT, 0, 0, 1, 0, 0, 0, 1};
+  cfg.lang = 1;
+  cfg.alexa = 0;
+  cfg.theme = THEME_AI_DASHBOARD;
+  strlcpy(cfg.tz,"CET-1CEST,M3.5.0,M10.5.0/3",sizeof cfg.tz);
 }
 
 // ---------- recuperação: 3 inicializações curtas seguidas ----------
@@ -1178,6 +1195,10 @@ int32_t localOffset();  // hora local - UTC agora, em segundos (mais abaixo)
 UiState makeState() {
   UiState s;
   memset(&s, 0, sizeof s);
+  s.claude = usageClaude.view(millis());
+  s.codex = usageCodex.view(millis());
+  s.dashboardParts = displayPlaylist.dashboardParts;
+  s.weatherGif = completeWeatherGifActive;
   s.timeOk = localNow(s.now);
   s.hour12 = cfg.hour12;
   s.phase = phase;
@@ -1230,6 +1251,7 @@ struct DrawProbe {
 };
 
 void renderClock() {
+  if (completeShowEmptyAlbum()) return;
   DrawProbe probe;
   UiState s = makeState();
   if (!s.timeOk) {  // sem hora ainda: nunca parece travado
@@ -1313,7 +1335,7 @@ void fsMount() {
   if (!fsLayout2()) return;
   EEPROM.get(FS_OFF, fsMark);
   if (fsMark.magic == FS_MAGIC) return;
-  message("SmallTV Pomodoro", tr("Reorganizando a memoria", "Reorganizing storage", "Reorganizando la memoria"), "...");
+  message("SmallTV Complete", tr("Reorganizando a memoria", "Reorganizing storage", "Reorganizando la memoria"), "...");
   if (fsOk) LittleFS.end();
   // Antes de formatar, guarda o histórico, o rodízio e os avisos, que valem mais que o espaço que ocupam: no primeiro
   // início o LittleFS antigo (4M3M, 0x100000-0x3FA000) ainda está intacto, porque a atualização só gravou abaixo de
@@ -1754,6 +1776,7 @@ void gifDraw(GIFDRAW *p) {
 }
 
 void stopAlbum() {
+  completeWeatherGifActive=false;completeWeatherGifFailed=false;
   if (gif) {
     gif->close();
     delete gif;
@@ -1804,7 +1827,9 @@ void albumLoop() {
   int delayMs = 0;
   int r = gif->playFrame(false, &delayMs);
   if (r < 0) {  // erro: desiste deste GIF
+    bool weather=completeWeatherGifActive;
     stopAlbum();
+    if(weather)completeWeatherGifFailed=true;
     return;
   }
   if (r == 0) gif->reset();  // último quadro: recomeça
@@ -1813,6 +1838,7 @@ void albumLoop() {
 
 // Decide o que mostrar quando não há Pomodoro: relógio ou um item do álbum.
 void scheduleView() {
+  if (displayPlaylistEnabled && completeScheduleView()) return;
   uint32_t now = millis();
   if (viewUntil && (int32_t)(now - viewUntil) < 0) return;
   bool wantAlbum = !album.empty() && (cfg.mode == 1 || (cfg.mode == 2 && !inAlbum));
@@ -2294,6 +2320,7 @@ void sendFiles() {
 // (sem montar a lista inteira na RAM); /api/fsdelete apaga um arquivo ou uma pasta inteira, menos o que
 // o relógio precisa para funcionar (fsKeep).
 bool fsKeep(const String &p) {
+  if(p=="/display.json" || p=="/complete-migrated" || p=="/config.json")return true;
   if (p == "/stats.bin" || p == "/hooks.txt" || p == "/rotation.txt" || p == "/www" || p.startsWith("/www/")) return true;
   if (p == "/image" || p == "/gif" || p == "/faces") return true;  // as pastas ficam; o que está dentro pode sair
   return cfg.theme == THEME_PACK && p.startsWith(String("/faces/") + cfg.facePkg + ".");  // mostrador em uso
@@ -2481,20 +2508,17 @@ void handlePanelUpload() {
   }
 }
 
+#include "complete_impl.h"
+
 void setupWeb() {
   server.collectHeaders("X-SmallTV", "Content-Length", "Authorization", "Origin", "X-Firmware-Sig");
   // painel: o desta versão na memória de arquivos ou, sem ele, o carregador que o instala
+  completeWeb();
   server.on("/", HTTP_GET, [] {
-    if (!readOk()) return;  // com senha, o navegador pede o login já ao abrir o painel
-    server.sendHeader("Cache-Control", "no-cache");  // depois de atualizar o firmware, o navegador busca o painel novo
-    File f = fsOk ? LittleFS.open("/www/" PANEL_HASH ".gz", "r") : File();
-    if (f) {
-      server.streamFile(f, "text/html");  // .gz: o servidor manda "Content-Encoding: gzip"
-      f.close();
-      return;
-    }
-    server.sendHeader("Content-Encoding", "gzip");
-    server.send_P(200, "text/html", (PGM_P)LOADER_HTML_GZ, sizeof(LOADER_HTML_GZ));
+    if (!readOk()) return;
+    server.sendHeader("Content-Encoding","gzip");
+    server.sendHeader("Cache-Control","no-cache");
+    server.send_P(200,"text/html",(const char*)COMPLETE_PANEL_GZ,sizeof COMPLETE_PANEL_GZ);
   });
   server.on("/api/panel", HTTP_POST, [] {
     if (!guard()) return;
@@ -2679,11 +2703,14 @@ void setupWeb() {
     cfg.brightness = argRange("bri", cfg.brightness, 5, 100);  // mínimo 5: com 0 a tela apagaria
     cfg.autoStart = argRange("auto", cfg.autoStart, 0, 1);
     cfg.hour12 = argRange("h12", cfg.hour12, 0, 1);
-    if (server.hasArg("theme") && server.arg("theme").length()) {  // embutido: libera o motor de pacotes
+    if (server.hasArg("theme") && server.arg("theme").length()) {
+      displayPlaylistEnabled = false;
+      completeSavePlaylist();  // embutido: libera o motor de pacotes
       cfg.theme = argRange("theme", cfg.theme, 0, THEME_COUNT - 1);
       facePackUnload();
     }
     if (server.hasArg("pkg") && loadPack(server.arg("pkg"))) {
+      displayPlaylistEnabled = false;completeSavePlaylist();
       cfg.theme = THEME_PACK;
       strlcpy(cfg.facePkg, server.arg("pkg").c_str(), sizeof cfg.facePkg);
     }
@@ -2701,6 +2728,7 @@ void setupWeb() {
     cfg.bgr = bgr;
     cfg.invert = inv;
     cfg.flip = flip;
+    if (server.hasArg("mode")) {displayPlaylistEnabled=false;completeSavePlaylist();}
     cfg.mode = argRange("mode", cfg.mode, 0, 2);
     cfg.albumDelay = argRange("delay", cfg.albumDelay, 3, 255);
     cfg.nightOn = argRange("non", cfg.nightOn, 0, 1);
@@ -2740,7 +2768,7 @@ void setupWeb() {
     if (server.hasArg("lat") && server.hasArg("lon") && safeText(server.arg("city")) && fabsf(lat) <= 90 && fabsf(lon) <= 180) {
       cfg.lat = lat;
       cfg.lon = lon;
-      strlcpy(cfg.city, server.arg("city").c_str(), sizeof(cfg.city));
+      utf8Copy(cfg.city, server.arg("city").c_str(), sizeof(cfg.city));
       newPlace = true;
     }
     if (newPlace || won != cfg.weatherOn) {
@@ -2834,7 +2862,7 @@ void setupWeb() {
   server.on("/api/delete", HTTP_POST, [] {
     if (!guard()) return;
     const String &f = server.arg("f");
-    if (curFile == f) {
+    if (curFile == f || (completeWeatherGifActive && completeWeatherGif == f)) {
       stopAlbum();
       viewUntil = 0;
     }
@@ -2855,7 +2883,7 @@ void setupWeb() {
       server.send_P(400, PSTR("text/plain"), PSTR("Nao foi possivel apagar"));
       return;
     }
-    if (curFile == f || curFile.startsWith(f + "/")) {  // o arquivo na tela, ou a pasta dele
+    if (curFile == f || curFile.startsWith(f + "/") || (completeWeatherGifActive && (completeWeatherGif == f || completeWeatherGif.startsWith(f + "/")))) {  // o arquivo na tela, ou a pasta dele
       stopAlbum();
       viewUntil = 0;
     }
@@ -2878,7 +2906,10 @@ void setupWeb() {
       server.send_P(400, PSTR("text/plain"), PSTR("Arquivo invalido"));
       return;
     }
-    viewUntil = millis() + cfg.albumDelay * 1000UL;
+    displayPlaylistEnabled = true;
+    displayPlaylist.rotate = false;displayPlaylist.count = 1;displayPlaylist.screens[0] = ScreenPlaylist::ALBUM;
+    displayPlaylist.albumAuto = false;completeSelectedPhoto = f;completeSavePlaylist();
+    completeScreen = -1;viewUntil = 0;
     server.send(200, "text/plain", "ok");
   });
   server.on("/api/migdone", HTTP_POST, [] {  // o painel restaurou (ou dispensou) o backup da migração
@@ -3150,7 +3181,7 @@ void setupUpdate() {
         ota = {0, 0, 0, 0xFFFFFFFF, {0}, String(), authOk(), false, false, false};
         otaSigBegin();
         if (!ota.authOk) ota.err = F("senha");
-        else if (inAlbum) stopAlbum();  // libera RAM e o LittleFS durante a gravação
+        else if (inAlbum || completeWeatherGifActive) stopAlbum();  // libera RAM e o LittleFS durante a gravação
       } else if (up.status == UPLOAD_FILE_WRITE && !ota.err.length()) {
         if (!ota.begun) {  // primeiro pedaço: .gz vai para o fim da área (tamanho do envio); .bin, para o espaço livre
           ota.begun = true;
@@ -3307,6 +3338,7 @@ void rotSet(const String &v) {
 }
 
 void rotLoop() {
+  if (displayPlaylistEnabled) return;
   if (!cfg.rotMin || !rotList.length() || phase != IDLE || previewActive() || inAlbum) return;
   if ((int32_t)(millis() - rotNext) < 0) return;
   rotNext = millis() + cfg.rotMin * 60000UL;
@@ -3617,11 +3649,13 @@ void setup() {
   applyPanel();
   // A tela de início aparece já: montar a memória de arquivos, o histórico, o mostrador e a lista de fotos leva
   // alguns segundos, e com a tela preta parecia travado.
-  message("SmallTV Pomodoro", tr("Iniciando", "Starting", "Iniciando"), "v" FW_VERSION);
+  message("SmallTV Complete", tr("Iniciando", "Starting", "Iniciando"), "v" FW_VERSION);
   bootScreenMs = millis() | 1;
   uiBootProgress(millis(), 0);
 
   fsMount();
+  completeBegin();
+  completeMigrateNetwork();
   statsLoad();
   if (fsOk) {
     File rf = LittleFS.open("/rotation.txt", "r");
@@ -3721,7 +3755,7 @@ void loop() {
   if (vcomTestUntil) {
     if ((int32_t)(now - vcomTestUntil) < 0) {
       if (vcomDraw) {
-        if (inAlbum) stopAlbum();
+        if (inAlbum || completeWeatherGifActive) stopAlbum();
         uiVcomTest(vcomTest, vcomDraw == 2);
         vcomDraw = 0;
       }
@@ -3735,7 +3769,7 @@ void loop() {
 
   if (colorTestRequested) {
     colorTestRequested = false;
-    if (inAlbum) stopAlbum();
+    if (inAlbum || completeWeatherGifActive) stopAlbum();
     uiColorTest();
     colorTestUntil = now + 10000;
   }
@@ -3752,11 +3786,11 @@ void loop() {
     if (previewTheme == THEME_PACK) restoreActivePack();
   }
   if (previewActive()) {
-    if (inAlbum) stopAlbum();
+    if (inAlbum || completeWeatherGifActive) stopAlbum();
   } else if (phase == IDLE) {
     scheduleView();
     albumLoop();  // quadros de GIF precisam rodar fora do limite de 100 ms
-  } else if (inAlbum) {
+  } else if (inAlbum || completeWeatherGifActive) {
     stopAlbum();
     viewUntil = 0;
   }

@@ -3,6 +3,7 @@
 // (suavizada) e o tempo nos sprites em pixel art da cena Tomate (sol, nuvem, nuvem de chuva).
 // Registrado em faces_list.h; usa o kit de desenho de ui_kit.h.
 #include "ui_kit.h"
+#include "utf8_text.h"
 #include "assets.h"
 
 static const int CARD_Y = 34, CARD_W = 54, CARD_H = 200, CARD_GAP = 4;
@@ -114,7 +115,7 @@ static void paintTime(void *c) {
 
 void themeForecastCards(const UiState &s, bool full) {
   char t[24];
-  snprintf(t, sizeof t, "%.23s", s.city && s.city[0] ? s.city : tr("Previsao", "Forecast", "Pronostico"));
+  utf8Copy(t,s.city && s.city[0] ? s.city : tr("Previsao", "Forecast", "Pronostico"),24);
   if (changed(cB, t)) uiPaint(full, 0, 2, 160, 30, paintCity, t);
   char hm[8] = "--:--";
   if (s.timeOk) snprintf(hm, sizeof hm, "%d:%02d", displayHour(s), s.now.tm_min);

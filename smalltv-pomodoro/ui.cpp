@@ -10,6 +10,7 @@
 #include "ui.h"
 #include "assets.h"
 #include "ui_kit.h"
+#include "utf8_text.h"
 #include "facepack.h"
 #include "setup_qr.h"
 
@@ -52,14 +53,19 @@ static const char *phaseLabel(uint8_t p) {
 
 // ---------- texto (fonte 6x8 embutida) ----------
 int textW(const char *s, uint8_t sz) {
-  int n = strlen(s);
+  int n = utf8Characters(s);
   return n ? n * 6 * sz - sz : 0;
 }
 void text(int x, int y, uint8_t sz, uint16_t c, const char *s) {
   G->setTextSize(sz);
   G->setTextColor(c);
   G->setCursor(x, y);
-  G->print(s);
+  while (*s) {
+    uint32_t cp = utf8Character(s);
+    if (cp == '\n') { y += 8 * sz; x = 0; continue; }
+    G->drawChar(x,y,utf8Cp437(cp),c,c,sz);
+    x += 6 * sz;
+  }
 }
 void textC(int cx, int y, uint8_t sz, uint16_t c, const char *s) { text(cx - textW(s, sz) / 2, y, sz, c, s); }
 void textR(int rx, int y, uint8_t sz, uint16_t c, const char *s) { text(rx - textW(s, sz), y, sz, c, s); }
@@ -138,6 +144,7 @@ static bool enter(int8_t id) {
 
 void uiBegin(Adafruit_GFX *gfx) {
   G = gfx;
+  G->cp437(true);
   G->setTextWrap(false);
   uiScrollEnd();
   screen = -1;
@@ -412,6 +419,7 @@ void uiClipBegin(int x0, int y0, int x1, int y1) {
   uiClip = {true, (int16_t)(x0 < 0 ? 0 : x0), (int16_t)(y0 < 0 ? 0 : y0), (int16_t)(x1 > 240 ? 240 : x1), (int16_t)(y1 > 240 ? 240 : y1)};
   clipGfx.t = realG;
   clipGfx.setTextWrap(false);
+  clipGfx.cp437(true);
   G = &clipGfx;
 }
 
@@ -508,6 +516,7 @@ bool uiOffscreen(int x, int y, int w, int h, void (*draw)(void *), void *ctx) {
     bufGfx.bw = w;
     bufGfx.bh = sh;
     bufGfx.setTextWrap(false);
+    bufGfx.cp437(true);
     uiClip = {true, (int16_t)x, (int16_t)sy, (int16_t)(x + w), (int16_t)(sy + sh)};  // blit() e imagens recortam aqui
     offscreen = true;
     G = &bufGfx;

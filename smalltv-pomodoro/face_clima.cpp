@@ -1,6 +1,7 @@
 // Mostrador Clima: temperatura grande e mini cartões.
 // Registrado em faces_list.h; usa o kit de desenho de ui_kit.h.
 #include "ui_kit.h"
+#include "utf8_text.h"
 #include "assets.h"
 
 // ---------- tema 3: CLIMA ----------
@@ -45,7 +46,7 @@ static void paintWeather(void *c) {
   textC(120, 124, 2, TEXT, desc);
   if (s.city && s.city[0]) {
     char c[24];
-    snprintf(c, sizeof c, "%.20s", s.city);
+    utf8Copy(c,s.city,21);
     textC(120, 144, 1, MUTED, c);
   }
   char a[8], b[8], h[8];
