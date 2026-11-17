@@ -27,6 +27,8 @@ Host checks passed: address/undefined-behavior sanitizers for UTF-8, usage/displ
 
 The upstream Linux 32-bit media fuzzing suite was retained but not run on this Mac. CI is supplied as a template because the publishing credential does not include workflow permission. No automated GitHub run is claimed.
 
-## 2.0.1 changes awaiting installation
+## 2.0.1 installation and testing scope
 
 Adds category submenus inside the existing Settings tab, integrates the full display form using the panel theme, and redirects the previous /display URL to the same Settings submenu. Adds a persisted remaining-limit flag; usage ingestion remains in percentages used, while the renderer and Settings preview can show 100 minus used. Native tests cover both modes, endpoints and invalid configuration types; renderer tests toggle the mode during incremental drawing. Browser checks cover category navigation, the legacy link, save/reload, remaining values and a 390-pixel phone layout without horizontal overflow.
+
+The signed 2.0.1 image (`f32dea6a8baf627fe87756511d14c285c0fd17df3b32bdedcff06b02a7c9bdb6`) was subsequently installed on 4 November 2026. The updater returned HTTP 200 and the device reported version 2.0.1 after restarting. Saved display, weather, timezone and brightness settings matched the values captured before the update, and the served main panel matched the built HTML. The legacy /display link was observed opening the integrated Settings submenu. Complete post-update checks of its form loading, live usage and remaining-mode controls were not finished; no such hardware validation is claimed.

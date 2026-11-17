@@ -4,7 +4,7 @@ Open-source firmware for the **GeekMagic SmallTV Ultra (ESP8266, 4 MB, 240 × 24
 
 This is a functional replacement for the original GeekMagic feature categories. GeekMagic has not provided its firmware source: this project does not merge or reproduce its proprietary binary, exact artwork, cloud services, or every vendor setting.
 
-**Status: 2.0.1 development preview.** The previous 2.0.0 build is installed and tested on one SmallTV Ultra; the new Settings integration and remaining-limit mode are built and host-tested, awaiting installation approval. Verified Wi-Fi migration from smalltv-ultra-mod 1.0.2, real Claude/Codex pushes, current weather, individual/combined screens, timed rotation, and JPEG/GIF album playback. Tests are limited to this unit; recovery mode and every panel feature have not been exercised on hardware. See [validation details](docs/VALIDATION.md).
+**Status: 2.0.1 development preview.** The 2.0.0 build was tested on one SmallTV Ultra. The signed 2.0.1 update was then installed, booted, and verified to preserve the saved settings. Its new Settings integration and remaining-limit mode passed host and browser-preview tests; a complete post-update on-device UI check has not been completed. Verified Wi-Fi migration from smalltv-ultra-mod 1.0.2, real Claude/Codex pushes, current weather, individual/combined screens, timed rotation, and JPEG/GIF album playback. Tests are limited to this unit; recovery mode and every panel feature have not been exercised on hardware. See [validation details](docs/VALIDATION.md).
 
 <img src="docs/complete/face-15.png" width="240" alt="Simulated combined dashboard"> <img src="docs/complete/face-16.png" width="240" alt="Simulated classic weather clock">
 
